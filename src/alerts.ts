@@ -1,0 +1,225 @@
+import type { NtfyConfig } from "./config.js";
+import type { VerifiedDisclosure } from "./freshness.js";
+import { isMajor, type ImpactDraft, type Judgment, type Observation, type Source, type TargetMatch } from "./types.js";
+import type { Alert, AlertReason } from "./types.js";
+
+export interface AlertPolicy {
+  alertThreshold: number;
+  weakSignalFloor: number;
+  accumulationThreshold: number;
+  /** LLM judgments alert directly iff material=true and consequence >= this; they never accumulate. */
+  materialMinScore?: number;
+}
+
+export interface AlertDecision {
+  reason: AlertReason;
+  score: number;
+  targetKey: string | null;
+  material?: boolean;
+}
+
+/**
+ * Decide whether a judgment should alert. Strong signals alert directly; weak
+ * signals accumulate per target so a run of small developments still surfaces.
+ * `priorWeakSums` maps target key -> weak-signal total before this judgment.
+ */
+/** Event types too routine to build toward an accumulated alert on their own. */
+const NON_ACCUMULATING_EVENTS = new Set(["general", "product"]);
+
+/**
+ * Matches that count toward weak-signal accumulation. Trade matches only count when the item
+ * pushes the thesis one way; otherwise a busy topic would accumulate on sheer volume.
+ */
+export function accumulatingMatches(judgment: Pick<Judgment, "eventType" | "matches">): TargetMatch[] {
+  return judgment.matches.filter((m) =>
+    m.targetKey.startsWith("trade:") ? m.direction !== undefined : !NON_ACCUMULATING_EVENTS.has(judgment.eventType),
+  );
+}
+
+export function decideAlert(
+  judgment: Pick<Judgment, "consequence" | "matches" | "eventType" | "material">,
+  priorWeakSums: Map<string, number>,
+  policy: AlertPolicy,
+): AlertDecision | null {
+  if (judgment.matches.length === 0) return null;
+  if (judgment.material !== undefined) {
+    if (!judgment.material || judgment.consequence < (policy.materialMinScore ?? 0.5)) return null;
+    return { reason: "direct", score: judgment.consequence, targetKey: judgment.matches[0]?.targetKey ?? null, material: true };
+  }
+  if (judgment.consequence >= policy.alertThreshold) {
+    return { reason: "direct", score: judgment.consequence, targetKey: judgment.matches[0]?.targetKey ?? null };
+  }
+  if (judgment.consequence < policy.weakSignalFloor) return null;
+  let best: AlertDecision | null = null;
+  for (const m of accumulatingMatches(judgment)) {
+    const total = (priorWeakSums.get(m.targetKey) ?? 0) + judgment.consequence;
+    if (total >= policy.accumulationThreshold && (!best || total > best.score)) {
+      best = { reason: "accumulated", score: Math.round(total * 1000) / 1000, targetKey: m.targetKey };
+    }
+  }
+  return best;
+}
+
+/** Events mode: alert when the item newly moves a pillar majorly, either way. Re-reports add no impacts, so never alert. */
+export function decideEventAlert(judgment: Pick<Judgment, "consequence">, added: Pick<ImpactDraft, "tradeId" | "effect">[]): AlertDecision | null {
+  const major = added.find((i) => isMajor(i.effect));
+  return major ? { reason: "direct", score: judgment.consequence, targetKey: `trade:${major.tradeId}`, material: true } : null;
+}
+
+export interface AlertPayload {
+  type: "mimir.alert";
+  alert: Alert;
+  observation: Observation;
+  judgment: Judgment;
+  source: { id: string; name: string; type: string };
+  /** Pillars this item moved majorly, e.g. ["Big buyers pay for firm power."]. */
+  pillars?: string[];
+  disclosure?: VerifiedDisclosure;
+}
+
+export function buildPayload(alert: Alert, observation: Observation, judgment: Judgment, source: Source, pillars: string[] = [], disclosure?: VerifiedDisclosure): AlertPayload {
+  return {
+    type: "mimir.alert",
+    alert,
+    observation: disclosure ? { ...observation, title: disclosure.newFact, summary: "", publishedAt: disclosure.firstPublicAt, url: disclosure.originUrl } : observation,
+    judgment,
+    source: { id: source.id, name: source.name, type: source.type },
+    ...(pillars.length > 0 ? { pillars } : {}),
+    ...(disclosure ? { disclosure } : {}),
+  };
+}
+
+function originName(payload: AlertPayload): string {
+  return payload.disclosure ? new URL(payload.disclosure.originUrl).hostname.replace(/^www\./, "") : payload.source.name;
+}
+
+const ARROWS = { strengthens: "↑ strengthening", weakens: "↓ weakening", mixed: "↕ mixed" } as const;
+
+/** e.g. "AI infra buildout ↑ strengthening, NVDA" */
+export function describeTargets(matches: TargetMatch[]): string {
+  return matches.map((m) => (m.direction ? `${m.name} ${ARROWS[m.direction]}` : m.name)).join(", ");
+}
+
+const MARKS = { strengthens: "▲", weakens: "▼", mixed: "◆" } as const;
+
+/** Trades hit, with direction, e.g. "▲ AI infra buildout". Falls back to themes/entities when no trade matched. */
+export function directionLine(matches: TargetMatch[]): string {
+  const trades = matches.filter((m) => m.targetKey.startsWith("trade:"));
+  return (trades.length > 0 ? trades : matches).map((m) => `${m.direction ? MARKS[m.direction] : "•"} ${m.name}`).join("   ");
+}
+
+/** Google News titles end in " - Outlet"; split that off so the push names the real publisher. */
+export function splitOutlet(title: string, source: Pick<Source, "name" | "type">): { title: string; outlet: string } {
+  const m = /^(.*\S)\s+-\s+([^-]{2,60})$/.exec(title);
+  return source.type === "google-news" && m ? { title: m[1]!, outlet: m[2]! } : { title, outlet: source.name };
+}
+
+const etClock = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" });
+
+/** e.g. "3:57 PM ET (9m ago)" */
+export function publishedLine(publishedAt: string | null, now: Date = new Date()): string | null {
+  if (publishedAt && /^\d{4}-\d{2}-\d{2}$/.test(publishedAt)) return `Published ${publishedAt} (time unknown)`;
+  const at = publishedAt ? new Date(publishedAt) : null;
+  if (!at || Number.isNaN(at.getTime())) return null;
+  const mins = Math.max(0, Math.round((now.getTime() - at.getTime()) / 60_000));
+  const ago = mins < 60 ? `${mins}m` : mins < 48 * 60 ? `${Math.round(mins / 60)}h` : `${Math.round(mins / 1440)}d`;
+  return `${etClock.format(at)} ET (${ago} ago)`;
+}
+
+export async function deliverWebhook(url: string, payload: AlertPayload, fetchImpl: typeof fetch = fetch): Promise<void> {
+  const res = await fetchImpl(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) throw new Error(`Webhook HTTP ${res.status}`);
+}
+
+/** ntfy priority: 5 (urgent) for very strong direct alerts, 4 for direct, 3 for accumulated. */
+export function ntfyPriority(alert: Pick<Alert, "reason" | "score">): number {
+  if (alert.reason === "accumulated") return 3;
+  return alert.score >= 0.85 ? 5 : 4;
+}
+
+/** Push an alert to a phone via ntfy (https://ntfy.sh) using its JSON publish API. */
+export async function deliverNtfy(ntfy: NtfyConfig, payload: AlertPayload, fetchImpl: typeof fetch = fetch): Promise<void> {
+  const { alert, observation, judgment } = payload;
+  const targets = describeTargets(judgment.matches);
+  const headline = alert.reason === "direct" ? "Direct" : "Accumulated weak signals";
+  const message = [`${headline} (${alert.score}) · ${judgment.eventType} · ${targets}`, judgment.rationale, `via ${originName(payload)}`]
+    .filter(Boolean)
+    .join("\n");
+  const res = await fetchImpl(ntfy.url.replace(/\/$/, ""), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(ntfy.token ? { Authorization: `Bearer ${ntfy.token}` } : {}) },
+    body: JSON.stringify({
+      topic: ntfy.topic,
+      title: observation.title.slice(0, 250),
+      message,
+      priority: ntfyPriority(alert),
+      tags: [alert.reason === "direct" ? "rotating_light" : "chart_with_upwards_trend"],
+      ...(observation.url ? { click: observation.url } : {}),
+    }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) throw new Error(`ntfy HTTP ${res.status}`);
+}
+
+/** iOS interruption level: time-sensitive (breaks through Focus) for very strong direct alerts. */
+export function barkLevel(alert: Pick<Alert, "reason" | "score">): "timeSensitive" | "active" {
+  return alert.reason === "direct" && alert.score >= 0.85 ? "timeSensitive" : "active";
+}
+
+/**
+ * Push an alert to an iPhone via Bark (https://bark.day.app). `barkUrl` is the
+ * device URL shown in the Bark app, e.g. https://api.day.app/<device key>.
+ */
+export async function deliverBark(
+  barkUrl: string,
+  payload: AlertPayload,
+  fetchImpl: typeof fetch = fetch,
+  now: Date = new Date(),
+): Promise<void> {
+  const { alert, observation, judgment, source, pillars } = payload;
+  const { title, outlet } = payload.disclosure ? { title: observation.title, outlet: originName(payload) } : splitOutlet(observation.title, source);
+  const footer = [outlet, publishedLine(observation.publishedAt, now)].filter(Boolean).join(" · ");
+  const res = await fetchImpl(barkUrl.replace(/\/+$/, ""), {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify({
+      title: title.slice(0, 250),
+      subtitle: `${alert.reason === "accumulated" ? "Building: " : ""}${directionLine(judgment.matches)}${pillars?.length ? ` · ${pillars[0]}` : ""}`,
+      body: [judgment.rationale, footer].filter(Boolean).join("\n"),
+      level: barkLevel(alert),
+      group: "Mimir",
+      ...(observation.url ? { url: observation.url } : {}),
+    }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) throw new Error(`Bark HTTP ${res.status}`);
+}
+
+const slackEscape = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/** Post an alert to a Slack incoming webhook (https://api.slack.com/messaging/webhooks). */
+export async function deliverSlack(webhookUrl: string, payload: AlertPayload, fetchImpl: typeof fetch = fetch): Promise<void> {
+  const { alert, observation, judgment } = payload;
+  const title = slackEscape(observation.title);
+  const headline = alert.reason === "direct" ? "Direct" : "Accumulated weak signals";
+  const text = [
+    `*${observation.url ? `<${observation.url}|${title}>` : title}*`,
+    `${alert.reason === "direct" && alert.score >= 0.85 ? ":rotating_light: " : ""}${headline} (${alert.score}) · ${slackEscape(describeTargets(judgment.matches))}`,
+    slackEscape(judgment.rationale),
+    `_via ${slackEscape(originName(payload))}_`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const res = await fetchImpl(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, unfurl_links: false }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) throw new Error(`Slack HTTP ${res.status}`);
+}
