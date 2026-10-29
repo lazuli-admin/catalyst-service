@@ -68,6 +68,31 @@ export interface Trade {
   createdAt: string;
 }
 
+export type CatalystKind = "earnings" | "regulatory_decision" | "approval" | "patent_expiry" | "lockup_expiry" | "deal_close" | "shareholder_vote" | "product_launch" | "buildout_completion" | "rule_effective" | "index_rebalance" | "macro" | "investor_event" | "litigation" | "other";
+
+export type CatalystStatus = "expected" | "confirmed" | "occurred" | "cancelled";
+
+export interface Catalyst {
+  id: string;
+  ticker: string | null;
+  title: string;
+  kind: CatalystKind;
+  status: CatalystStatus;
+  /** YYYY-MM-DD, earliest expected. */
+  dateStart: string;
+  /** YYYY-MM-DD, latest expected; equal to dateStart when exact. */
+  dateEnd: string;
+  /** 0..1 */
+  confidence: number;
+  themes: string[];
+  affectedTickers: string[];
+  sourceUrl: string | null;
+  observationId: string | null;
+  dedupeKey: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Watchlist {
   themes: Theme[];
   entities: Entity[];

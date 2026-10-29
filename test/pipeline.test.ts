@@ -54,6 +54,17 @@ describe("pipeline", () => {
     expect(results[2]?.alerts[0]).toMatchObject({ reason: "accumulated" });
   });
 
+  it("stores catalysts from a fake extractor when the item looks future-looking", async () => {
+    const { store, source } = await setup();
+    const extractor = { extract: async () => [{ ticker: "NVDA", title: "Product launch", kind: "product_launch" as const, status: "expected" as const, dateStart: "2026-06-01", dateEnd: "2026-06-01", confidence: 0.8, themes: [], affectedTickers: [] }] };
+    const d = deps(store, { catalysts: extractor });
+    await processItems(d, source, [{ externalId: "1", title: "Nvidia schedules product launch for Q3 2026", url: "https://a.com/1" }]);
+    const cats = await store.listCatalysts({ from: "2026-01-01", to: "2026-12-31" });
+    expect(cats).toHaveLength(1);
+    expect(cats[0]).toMatchObject({ ticker: "NVDA", kind: "product_launch", sourceUrl: "https://a.com/1" });
+    expect(cats[0]?.observationId).toEqual(expect.any(String));
+  });
+
   it("records source errors without throwing", async () => {
     const store = await memoryStore();
     const source = await store.createSource({ type: "rss", name: "broken", config: { url: "https://down.example.com/feed" } });

@@ -1,5 +1,6 @@
 import { loadConfig, type Config } from "./config.js";
 import { openStore, type Store } from "./db.js";
+import { createCatalystExtractor } from "./catalysts/extract.js";
 import { maybeSendDigest } from "./digest.js";
 import { runDueSources, type PipelineDeps } from "./pipeline.js";
 import { createLocalEmbedder, EventIndex, warmEventMemory } from "./events.js";
@@ -40,6 +41,7 @@ export function createDeps(config: Config, store: Store): PipelineDeps {
     events: config.eventGrouping ? new EventIndex(createLocalEmbedder()) : undefined,
     sourceContext: { fetch, userAgent: config.userAgent },
     freshness: { read: createPublisherReader(config.userAgent), judge: config.llm ? createLlmFreshness(config.llm) : undefined },
+    catalysts: config.llm ? createCatalystExtractor(config.llm) : undefined,
     webhookUrl: config.alertWebhookUrl,
     ntfy: config.ntfy,
     barkUrl: config.barkUrl,

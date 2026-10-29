@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { z } from "zod";
+import { catalystDensity } from "./catalysts/density.js";
 import type { Store } from "./db.js";
 import { processItems, runSource, type PipelineDeps } from "./pipeline.js";
 import { listAdapters, parseSourceConfig } from "./sources/registry.js";
@@ -134,6 +135,25 @@ export function buildServer(store: Store, deps: PipelineDeps): FastifyInstance {
       (await store.createSource({ type: "push", name: body.source, config: {} }));
     const items = body.items.map((i) => ({ ...i, externalId: i.id ?? i.url ?? i.title }));
     return processItems(deps, source, items);
+  });
+
+  const CatalystQuery = z.object({
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    ticker: z.string().optional(),
+    theme: z.string().optional(),
+  });
+  app.get("/catalysts", async (req) => {
+    const q = CatalystQuery.parse(req.query);
+    const today = new Date().toISOString().slice(0, 10);
+    const to = q.to ?? new Date(Date.parse(today) + 90 * 86_400_000).toISOString().slice(0, 10);
+    return store.listCatalysts({ from: q.from ?? today, to, ticker: q.ticker, theme: q.theme });
+  });
+  app.get("/catalysts/density", async (req) => {
+    const { days } = z.object({ days: z.coerce.number().int().min(1).max(365).default(90) }).parse(req.query);
+    const today = new Date().toISOString().slice(0, 10);
+    const cats = await store.listCatalysts({ from: today, to: new Date(Date.parse(today) + days * 86_400_000).toISOString().slice(0, 10) });
+    return catalystDensity(cats, { today, horizonDays: days });
   });
 
   app.get("/observations", async (req) => store.listObservations(Limit.parse(req.query).limit));

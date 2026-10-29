@@ -10,6 +10,7 @@ import {
   type AlertPolicy,
 } from "./alerts.js";
 import type { NtfyConfig } from "./config.js";
+import { catalystDedupeKey, type ExtractedCatalyst } from "./catalysts/extract.js";
 import type { PillarEvidence, Store } from "./db.js";
 import { embedText, findCandidates, placeInEvent, type EventCandidate, type EventIndex, type Placement } from "./events.js";
 import { freshnessHold, publisherFeedEvidence, type FreshnessCheck, type FreshnessDecision, type VerifiedDisclosure } from "./freshness.js";
@@ -19,7 +20,7 @@ import type { Triage } from "./scoring/triage.js";
 import type { Scorer } from "./scoring/types.js";
 import { getAdapter } from "./sources/registry.js";
 import type { SourceContext } from "./sources/types.js";
-import { isMajor, type Alert, type HeldReason, type RawItem, type Source, type Watchlist } from "./types.js";
+import { isMajor, type Alert, type HeldReason, type Judgment, type Observation, type RawItem, type Source, type Watchlist } from "./types.js";
 import { errorMessage, newId } from "./util.js";
 
 export interface PipelineDeps {
@@ -56,6 +57,29 @@ export interface PipelineDeps {
   log?: (msg: string) => void;
   /** Clock override, so a replay judges history as of when each item was seen. */
   now?: () => Date;
+  /** Future-event extraction; with an LLM configured, eligible items get their catalysts mined. */
+  catalysts?: { extract(item: { title: string; summary?: string; url?: string | null; publishedAt?: string | null }): Promise<ExtractedCatalyst[]> };
+}
+
+/** Cheap pre-filter: only items that at least mention a future-looking event are worth an extraction call. */
+const FUTURE_SIGNAL_RE = /\b(expect|expected|will|scheduled|deadline|by (q[1-4]|20\d\d)|pdufa|close[sd]? in|effective|vote|launch|completion|expir|lockup|hearing|ruling|202[6-9]|q[1-4])\b/i;
+
+/** Best-effort catalyst mining after a non-baseline judgment is stored; never breaks the pipeline. */
+async function mineCatalysts(deps: PipelineDeps, observation: Observation, judgment: Judgment): Promise<void> {
+  const { catalysts, policy } = deps;
+  if (!catalysts) return;
+  if (judgment.matches.length === 0 && judgment.consequence < policy.weakSignalFloor) return;
+  const text = `${observation.title} ${observation.summary}`;
+  if (!FUTURE_SIGNAL_RE.test(text)) return;
+  try {
+    const extracted = await catalysts.extract({ title: observation.title, summary: observation.summary, url: observation.url, publishedAt: observation.publishedAt });
+    for (const c of extracted) {
+      await deps.store.upsertCatalyst({ ...c, sourceUrl: observation.url, observationId: observation.id, dedupeKey: catalystDedupeKey(c) });
+    }
+    if (extracted.length > 0) deps.log?.(`catalysts: extracted ${extracted.length} from ${observation.title}`);
+  } catch (err) {
+    deps.log?.(`catalyst extraction failed: ${errorMessage(err)}`);
+  }
 }
 
 const TITLE_DEDUPE_WINDOW_MS = 7 * 24 * 3600_000;
@@ -203,6 +227,7 @@ export async function processItems(
       continue;
     }
     await store.insertJudgment(judgment);
+    await mineCatalysts(deps, observation, judgment);
 
     const decision =
       policy.alertMode === "events" ? decideEventAlert(judgment, placed?.added ?? []) : decideAlert(judgment, priorWeakSums, policy);
