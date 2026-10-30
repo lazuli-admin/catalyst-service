@@ -3,6 +3,10 @@ import { accumulatingMatches } from "./alerts.js";
 import type {
   Alert,
   AlertReason,
+  Catalyst,
+  CatalystInput,
+  CatalystStatus,
+  DatePrecision,
   Effect,
   Entity,
   EntityKind,
@@ -146,12 +150,58 @@ const MIGRATIONS = [
   )`,
   `CREATE INDEX IF NOT EXISTS impacts_event ON impacts(event_id)`,
   `CREATE INDEX IF NOT EXISTS impacts_created ON impacts(created_at)`,
+  `CREATE TABLE IF NOT EXISTS catalysts (
+    id TEXT PRIMARY KEY,
+    ticker TEXT,
+    title TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    status TEXT NOT NULL,
+    date_start TEXT NOT NULL,
+    date_end TEXT NOT NULL,
+    date_precision TEXT,
+    confidence REAL NOT NULL,
+    impact_weight REAL,
+    themes TEXT NOT NULL DEFAULT '[]',
+    affected_tickers TEXT NOT NULL DEFAULT '[]',
+    source_tier INTEGER NOT NULL DEFAULT 3,
+    source_url TEXT,
+    observation_id TEXT,
+    dedupe_key TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS catalysts_ticker ON catalysts(ticker)`,
+  `CREATE INDEX IF NOT EXISTS catalysts_date_start ON catalysts(date_start)`,
 ];
 
 const json = (v: unknown): string => JSON.stringify(v);
 const parse = <T>(v: unknown, fallback: T): T => (typeof v === "string" ? (JSON.parse(v) as T) : fallback);
 const s = (v: unknown): string => String(v);
 const sOrNull = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
+
+// Pre-policy status names, mapped to the current vocabulary.
+const LEGACY_STATUS: Record<string, CatalystStatus> = { expected: "scheduled", occurred: "done", rumored: "lead" };
+
+const toCatalyst = (row: Row): Catalyst => ({
+  id: s(row.id),
+  ticker: sOrNull(row.ticker),
+  title: s(row.title),
+  kind: s(row.kind) as Catalyst["kind"],
+  status: LEGACY_STATUS[s(row.status)] ?? (s(row.status) as CatalystStatus),
+  dateStart: s(row.date_start),
+  dateEnd: s(row.date_end),
+  datePrecision: row.date_precision ? (s(row.date_precision) as DatePrecision) : row.date_start === row.date_end ? "exact" : "window",
+  confidence: Number(row.confidence),
+  themes: parse(row.themes, [] as string[]),
+  affectedTickers: parse(row.affected_tickers, [] as string[]),
+  sourceTier: (Number(row.source_tier) || 3) as Catalyst["sourceTier"],
+  sourceUrl: sOrNull(row.source_url),
+  impactWeight: row.impact_weight === null || row.impact_weight === undefined ? null : Number(row.impact_weight),
+  observationId: sOrNull(row.observation_id),
+  dedupeKey: s(row.dedupe_key),
+  createdAt: s(row.created_at),
+  updatedAt: s(row.updated_at),
+});
 
 function toTheme(r: Row): Theme {
   return {
@@ -347,6 +397,13 @@ export class Store {
     }
     if (!(await this.all("PRAGMA table_info(alerts)")).some((c) => c.name === "event_id")) {
       await this.client.execute("ALTER TABLE alerts ADD COLUMN event_id TEXT");
+    }
+    const catalystCols = await this.all("PRAGMA table_info(catalysts)");
+    if (!catalystCols.some((c) => c.name === "date_precision")) {
+      await this.client.execute("ALTER TABLE catalysts ADD COLUMN date_precision TEXT");
+    }
+    if (!catalystCols.some((c) => c.name === "impact_weight")) {
+      await this.client.execute("ALTER TABLE catalysts ADD COLUMN impact_weight REAL");
     }
   }
 
@@ -855,6 +912,53 @@ export class Store {
       sourceName: s(r.s_name),
       alerted: Number(r.alerted) === 1,
     }));
+  }
+
+  // Catalysts
+  /** Insert or update by dedupeKey; id and createdAt are kept on conflict. */
+  async upsertCatalyst(c: CatalystInput): Promise<Catalyst> {
+    const updatedAt = nowIso();
+    const datePrecision = c.datePrecision ?? (c.dateStart === c.dateEnd ? "exact" : "window");
+    const rows = await this.all(
+      `INSERT INTO catalysts
+       (id, ticker, title, kind, status, date_start, date_end, date_precision, confidence, themes, affected_tickers, source_tier, source_url, impact_weight, observation_id, dedupe_key, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(dedupe_key) DO UPDATE SET
+         status = excluded.status,
+         date_start = excluded.date_start,
+         date_end = excluded.date_end,
+         date_precision = excluded.date_precision,
+         confidence = excluded.confidence,
+         themes = excluded.themes,
+         affected_tickers = excluded.affected_tickers,
+         source_tier = MIN(catalysts.source_tier, excluded.source_tier),
+         source_url = CASE WHEN excluded.source_tier <= catalysts.source_tier THEN excluded.source_url ELSE catalysts.source_url END,
+         impact_weight = COALESCE(excluded.impact_weight, catalysts.impact_weight),
+         updated_at = excluded.updated_at
+       RETURNING *`,
+      [newId(), c.ticker, c.title, c.kind, c.status, c.dateStart, c.dateEnd, datePrecision, c.confidence, json(c.themes), json(c.affectedTickers), c.sourceTier, c.sourceUrl, c.impactWeight ?? null, c.observationId, c.dedupeKey, updatedAt, updatedAt],
+    );
+    if (!rows[0]) throw new Error("upsertCatalyst returned no row");
+    return toCatalyst(rows[0]);
+  }
+
+  /** Catalysts whose [dateStart, dateEnd] window overlaps [from, to]. */
+  async listCatalysts(opts: { from: string; to: string; ticker?: string; theme?: string; includeCancelled?: boolean; includeLeads?: boolean }): Promise<Catalyst[]> {
+    const clauses = ["date_start <= ?", "date_end >= ?"];
+    const args: InValue[] = [opts.to, opts.from];
+    if (opts.ticker) {
+      clauses.push("(ticker = ? OR EXISTS (SELECT 1 FROM json_each(affected_tickers) WHERE value = ?))");
+      args.push(opts.ticker, opts.ticker);
+    }
+    if (opts.theme) {
+      clauses.push("EXISTS (SELECT 1 FROM json_each(themes) WHERE value = ?)");
+      args.push(opts.theme);
+    }
+    // Leads are hidden behind includeLeads: tier 2 press is a lead, not a calendar entry.
+    const excluded = [!opts.includeCancelled && "'cancelled'", !opts.includeLeads && "'lead'"].filter(Boolean).join(", ");
+    if (excluded) clauses.push(`status NOT IN (${excluded})`);
+    const rows = await this.all(`SELECT * FROM catalysts WHERE ${clauses.join(" AND ")} ORDER BY date_start`, args);
+    return rows.map(toCatalyst);
   }
 
   // Meta (small key/value state, e.g. when the digest last went out)

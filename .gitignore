@@ -5,3 +5,5 @@ dist
 .env
 .replay-cache.json
 .replay-cache-events.json
+catalyst-backfill.db*
+deploy/.env

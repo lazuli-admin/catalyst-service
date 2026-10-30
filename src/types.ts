@@ -68,6 +68,66 @@ export interface Trade {
   createdAt: string;
 }
 
+export type CatalystKind =
+  | "earnings"
+  | "regulatory_decision"
+  | "approval"
+  | "phase3_readout"
+  | "patent_decision"
+  | "patent_expiry"
+  | "lockup_expiry"
+  | "deal_close"
+  | "shareholder_vote"
+  | "buyback_offering"
+  | "buildout_completion"
+  | "rule_effective"
+  | "index_rebalance"
+  | "macro"
+  | "election"
+  | "investor_event"
+  | "product_launch"
+  | "conference"
+  | "peer_read_across"
+  | "litigation"
+  | "other";
+
+export type CatalystStatus = "lead" | "scheduled" | "confirmed" | "done" | "cancelled";
+
+/** How precisely the date is known: an exact day, a window, or a model estimate. */
+export type DatePrecision = "exact" | "window" | "estimated";
+
+export interface Catalyst {
+  id: string;
+  ticker: string | null;
+  title: string;
+  kind: CatalystKind;
+  status: CatalystStatus;
+  /** YYYY-MM-DD, earliest expected. */
+  dateStart: string;
+  /** YYYY-MM-DD, latest expected; equal to dateStart when exact. */
+  dateEnd: string;
+  datePrecision: DatePrecision;
+  /** 0..1 */
+  confidence: number;
+  themes: string[];
+  affectedTickers: string[];
+  /** 1 = primary source (newswire/IR/gov), 2 = reputable press, 3 = everything else. */
+  sourceTier: 1 | 2 | 3;
+  sourceUrl: string | null;
+  /** Placeholder for (historical move x implied move); null until measured. */
+  impactWeight: number | null;
+  observationId: string | null;
+  dedupeKey: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** What callers pass when upserting a catalyst: datePrecision/impactWeight are derived/defaulted by the store. */
+export type CatalystInput = Omit<Catalyst, "id" | "createdAt" | "updatedAt" | "datePrecision" | "impactWeight"> & {
+  datePrecision?: DatePrecision;
+  impactWeight?: number | null;
+};
+
 export interface Watchlist {
   themes: Theme[];
   entities: Entity[];

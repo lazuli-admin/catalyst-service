@@ -1,0 +1,11 @@
+node_modules
+dist
+*.db
+test
+deploy
+scripts
+.git
+.github
+README.md
+*.md
+.env

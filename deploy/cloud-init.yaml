@@ -1,0 +1,15 @@
+#cloud-config
+packages:
+  - docker.io
+  - docker-compose-v2
+  - git
+  - ufw
+runcmd:
+  - ufw allow OpenSSH
+  - ufw allow 8787/tcp
+  - ufw --force enable
+  - mkdir -p /opt
+write_files:
+  - path: /etc/ssh/sshd_config.d/50-disable-root-password.conf
+    content: |
+      PasswordAuthentication no

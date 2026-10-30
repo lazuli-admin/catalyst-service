@@ -1,5 +1,7 @@
 import { loadConfig, type Config } from "./config.js";
 import { openStore, type Store } from "./db.js";
+import { createCatalystExtractor } from "./catalysts/extract.js";
+import { DEFAULT_THEMES, DEFAULT_WATCHLIST, runProspect } from "./catalysts/prospect.js";
 import { maybeSendDigest } from "./digest.js";
 import { runDueSources, type PipelineDeps } from "./pipeline.js";
 import { createLocalEmbedder, EventIndex, warmEventMemory } from "./events.js";
@@ -8,6 +10,7 @@ import { addPresetPillars, DEFAULT_SOURCES, PRESET_PILLARS, PRESET_THEMES, PRESE
 import { heuristicScorer } from "./scoring/heuristic.js";
 import { createLlmScorer } from "./scoring/llm.js";
 import { createLlmTriage } from "./scoring/triage.js";
+import { syncCalendars } from "./catalysts/calendars.js";
 import { buildServer } from "./server.js";
 import { errorMessage } from "./util.js";
 
@@ -40,6 +43,7 @@ export function createDeps(config: Config, store: Store): PipelineDeps {
     events: config.eventGrouping ? new EventIndex(createLocalEmbedder()) : undefined,
     sourceContext: { fetch, userAgent: config.userAgent },
     freshness: { read: createPublisherReader(config.userAgent), judge: config.llm ? createLlmFreshness(config.llm) : undefined },
+    catalysts: config.llm ? createCatalystExtractor(config.llm) : undefined,
     webhookUrl: config.alertWebhookUrl,
     ntfy: config.ntfy,
     barkUrl: config.barkUrl,
@@ -62,11 +66,34 @@ async function main(): Promise<void> {
 
   if (deps.events) await warmEventMemory(store, deps.events, deps.scorer, Date.now(), deps.log);
 
+  const watchlist = (process.env.CATALYST_WATCHLIST?.trim() || DEFAULT_WATCHLIST.join(",")).split(",").map((s) => s.trim()).filter(Boolean);
+  const minMarketCap = Number(process.env.CATALYST_MIN_MARKET_CAP ?? 50e9);
+  const calendarHorizonDays = Number(process.env.CALENDAR_HORIZON_DAYS ?? 45);
+  const syncCalendarsNow = () => {
+    void syncCalendars(store, { from: new Date().toISOString().slice(0, 10), days: calendarHorizonDays, watchlist, minMarketCap, log: (m) => deps.log?.(`[calendars] ${m}`) });
+  };
+  if (process.env.NODE_ENV !== "test") {
+    syncCalendarsNow();
+    setInterval(syncCalendarsNow, 12 * 3600_000).unref();
+  }
+  const prospect = () =>
+    deps.catalysts && deps.store
+      ? runProspect({ store, extractor: deps.catalysts, userAgent: config.userAgent, log: deps.log }, { watchlist, themes: [...DEFAULT_THEMES], maxItems: 60, perQuery: 5 })
+      : Promise.resolve({ queries: 0, items: 0, stored: 0 });
+  let lastProspectAt = 0;
+  const PROSPECT_INTERVAL_MS = 6 * 3600_000;
+  if (config.llm) void prospect();
+
   let running = false;
   const tick = async () => {
     if (running) return;
     running = true;
     try {
+      if (config.llm && Date.now() - lastProspectAt >= PROSPECT_INTERVAL_MS) {
+        lastProspectAt = Date.now();
+        const counts = await prospect();
+        deps.log?.(`prospect: ${counts.items} items from ${counts.queries} queries, ${counts.stored} catalysts`);
+      }
       await runDueSources(deps, config.pollIntervalSeconds);
       if (config.digestTime && config.barkUrl) {
         await maybeSendDigest(
