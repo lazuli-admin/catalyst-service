@@ -87,6 +87,19 @@ async function syncEarningsDay(
 
 const MACRO_RE = /\b(CPI|Consumer Price|PPI|Producer Price|Nonfarm|Payrolls|Unemployment Rate|PCE|GDP|Retail Sales|FOMC|Fed Interest Rate|Interest Rate Decision|Fed Chair|ISM Manufacturing)\b/i;
 
+/** Sub-series collapse: regex -> canonical title so one release = one catalyst per date. */
+export const MACRO_CANONICAL: [RegExp, string][] = [
+  [/cpi/i, "US CPI"],
+  [/pce/i, "US PCE"],
+  [/gdp/i, "US GDP"],
+  [/ism manufacturing/i, "US ISM Manufacturing"],
+];
+
+export function canonicalMacroTitle(eventName: string): string | null {
+  for (const [re, title] of MACRO_CANONICAL) if (re.test(eventName)) return title;
+  return null;
+}
+
 async function syncMacroDay(
   store: Pick<Store, "upsertCatalyst">,
   date: string,
@@ -95,12 +108,19 @@ async function syncMacroDay(
   try {
     const body = (await fetchJson(`https://api.nasdaq.com/api/calendar/economicevents?date=${date}`, ctx.fetchImpl)) as { data?: { rows?: unknown } | null };
     const rows = (body.data?.rows ?? null) as { gmt?: unknown; country?: unknown; eventName?: unknown }[] | null;
+    const seen = new Set<string>();
     for (const row of rows ?? []) {
       if (row.country !== "United States" || typeof row.eventName !== "string") continue;
       if (!MACRO_RE.test(row.eventName)) continue;
+      const title = canonicalMacroTitle(row.eventName) ?? `US ${row.eventName}`;
+      // one release = one catalyst: collapse sub-series and key on exact date
+      const dedupeKey = `macro:${title}:${date}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
       await upsert(store, {
         ticker: null,
-        title: `US ${row.eventName}`,
+        title,
+        dedupeKey,
         kind: "macro",
         status: "confirmed",
         dateStart: date,
@@ -116,6 +136,6 @@ async function syncMacroDay(
   }
 }
 
-async function upsert(store: Pick<Store, "upsertCatalyst">, c: Omit<Catalyst, "id" | "createdAt" | "updatedAt" | "sourceUrl" | "observationId" | "dedupeKey" | "sourceTier" | "datePrecision" | "impactWeight"> & { sourceUrl?: null; observationId?: null }): Promise<void> {
-  await store.upsertCatalyst({ ...c, sourceTier: 1, sourceUrl: null, observationId: null, dedupeKey: catalystDedupeKey(c) });
+async function upsert(store: Pick<Store, "upsertCatalyst">, c: Omit<Catalyst, "id" | "createdAt" | "updatedAt" | "sourceUrl" | "observationId" | "dedupeKey" | "sourceTier" | "datePrecision" | "impactWeight"> & { sourceUrl?: null; observationId?: null; dedupeKey?: string }): Promise<void> {
+  await store.upsertCatalyst({ ...c, sourceTier: 1, sourceUrl: null, observationId: null, dedupeKey: c.dedupeKey ?? catalystDedupeKey(c) });
 }

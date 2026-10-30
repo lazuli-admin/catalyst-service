@@ -16,6 +16,9 @@ export const FR_AGENCIES: Record<string, { label: string; themes: string[]; affe
   "federal-communications-commission": { label: "FCC", themes: ["telecom"], affectedTickers: [] },
 };
 
+/** FCC rules outside these topics (e.g. radio license transfers) are noise. */
+export const FCC_TITLE_RE = /spectrum|broadband|net neutrality|satellite|merger/i;
+
 /** Fixed-date political events. */
 export const ELECTIONS: { date: string; title: string }[] = [
   { date: "2026-11-03", title: "US midterm elections" },
@@ -70,6 +73,7 @@ export async function syncFederalRegister(
         const htmlUrl = typeof row.html_url === "string" ? row.html_url : null;
         const abstract = typeof row.abstract === "string" ? row.abstract : "";
         if (!title || !documentNumber) continue;
+        if (agency.label === "FCC" && !FCC_TITLE_RE.test(title)) continue;
         // Two candidate dates: the rule's effective date and any expiry/end date stated in the abstract.
         const candidates = [row.effective_on, parseAbstractEndDate(abstract)].filter(
           (d): d is string => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= opts.today && d <= end,

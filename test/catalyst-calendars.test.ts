@@ -39,7 +39,7 @@ describe("syncCalendars", () => {
     expect(titles).toContain("SmallCap Inc earnings (bmo)");
     expect(titles).toContain("BigCap Corp earnings (amc)");
     expect(titles.some((t) => t.includes("Tiny Ltd"))).toBe(false);
-    expect(titles).toContain("US Consumer Price Index (CPI)");
+    expect(titles).toContain("US CPI");
     expect(titles.filter((t) => t.includes("Germany")).length).toBe(0);
     expect(titles.some((t) => t.includes("Purchasing Managers"))).toBe(false);
     const tickers = s.upsertCatalyst.mock.calls.map(([c]) => (c as { ticker: string | null }).ticker);
@@ -51,6 +51,23 @@ describe("syncCalendars", () => {
     expect(urls.some((u) => u.includes("date=2026-02-15"))).toBe(false);
     // dedupeKey set
     expect(s.upsertCatalyst.mock.calls.every(([c]) => typeof (c as { dedupeKey: string }).dedupeKey === "string" && (c as { dedupeKey: string }).dedupeKey.length > 0)).toBe(true);
+  });
+
+  it("collapses macro sub-series to one canonical catalyst per date", async () => {
+    const macro = { data: { rows: [
+      { gmt: "8:30am", country: "United States", eventName: "Consumer Price Index (CPI)" },
+      { gmt: "8:30am", country: "United States", eventName: "Core CPI m/m" },
+      { gmt: "8:30am", country: "United States", eventName: "CPI Index, n.s.a." },
+      { gmt: "8:30am", country: "United States", eventName: "Cleveland CPI" },
+      { gmt: "8:30am", country: "United States", eventName: "ISM Manufacturing PMI" },
+      { gmt: "8:30am", country: "United States", eventName: "ISM Manufacturing New Orders" },
+    ] } };
+    const s = store();
+    const counts = await syncCalendars(s, { ...opts, fetch: mockFetch({ data: { rows: null } }, macro) as unknown as typeof fetch });
+    expect(counts).toEqual({ earnings: 0, macro: 2 });
+    const rows = s.upsertCatalyst.mock.calls.map(([c]) => c as { title: string; dedupeKey: string });
+    expect(rows.map((r) => r.title).sort()).toEqual(["US CPI", "US ISM Manufacturing"]);
+    expect(rows.every((r) => r.dedupeKey === `macro:${r.title}:2026-02-12`)).toBe(true);
   });
 
   it("tolerates null rows", async () => {
