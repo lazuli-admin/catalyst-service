@@ -14,6 +14,7 @@ function cat(overrides: Partial<Catalyst> = {}): Catalyst {
     dateStart: "2026-03-10",
     dateEnd: "2026-03-10",
     confidence: 1,
+    sourceTier: 1,
     themes: [],
     affectedTickers: [],
     sourceUrl: null,

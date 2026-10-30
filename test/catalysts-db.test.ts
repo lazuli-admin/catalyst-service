@@ -10,6 +10,7 @@ const base: Omit<Catalyst, "id" | "createdAt" | "updatedAt"> = {
   dateStart: "2025-03-01",
   dateEnd: "2025-03-01",
   confidence: 0.9,
+  sourceTier: 1,
   themes: ["ai"],
   affectedTickers: ["NVDA"],
   sourceUrl: null,

@@ -86,6 +86,8 @@ export interface Catalyst {
   confidence: number;
   themes: string[];
   affectedTickers: string[];
+  /** 1 = primary source (newswire/IR/gov), 2 = reputable press, 3 = everything else. */
+  sourceTier: 1 | 2 | 3;
   sourceUrl: string | null;
   observationId: string | null;
   dedupeKey: string;

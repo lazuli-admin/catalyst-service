@@ -10,6 +10,7 @@ import {
   type AlertPolicy,
 } from "./alerts.js";
 import type { NtfyConfig } from "./config.js";
+import { acceptCatalyst, sourceTier } from "./catalysts/credibility.js";
 import { catalystDedupeKey, type ExtractedCatalyst } from "./catalysts/extract.js";
 import type { PillarEvidence, Store } from "./db.js";
 import { embedText, findCandidates, placeInEvent, type EventCandidate, type EventIndex, type Placement } from "./events.js";
@@ -71,10 +72,14 @@ async function mineCatalysts(deps: PipelineDeps, observation: Observation, judgm
   if (judgment.matches.length === 0 && judgment.consequence < policy.weakSignalFloor) return;
   const text = `${observation.title} ${observation.summary}`;
   if (!FUTURE_SIGNAL_RE.test(text)) return;
+  const tier = sourceTier({ url: observation.url, title: observation.title });
+  if (tier === 3) return; // unverified source: skip the LLM call entirely
+  const today = (deps.now ?? (() => new Date()))().toISOString().slice(0, 10);
   try {
     const extracted = await catalysts.extract({ title: observation.title, summary: observation.summary, url: observation.url, publishedAt: observation.publishedAt });
     for (const c of extracted) {
-      await deps.store.upsertCatalyst({ ...c, sourceUrl: observation.url, observationId: observation.id, dedupeKey: catalystDedupeKey(c) });
+      if (!acceptCatalyst(c, tier, today)) continue;
+      await deps.store.upsertCatalyst({ ...c, sourceTier: tier, sourceUrl: observation.url, observationId: observation.id, dedupeKey: catalystDedupeKey(c) });
     }
     if (extracted.length > 0) deps.log?.(`catalysts: extracted ${extracted.length} from ${observation.title}`);
   } catch (err) {

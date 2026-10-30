@@ -158,6 +158,7 @@ const MIGRATIONS = [
     confidence REAL NOT NULL,
     themes TEXT NOT NULL DEFAULT '[]',
     affected_tickers TEXT NOT NULL DEFAULT '[]',
+    source_tier INTEGER NOT NULL DEFAULT 3,
     source_url TEXT,
     observation_id TEXT,
     dedupe_key TEXT NOT NULL UNIQUE,
@@ -184,6 +185,7 @@ const toCatalyst = (row: Row): Catalyst => ({
   confidence: Number(row.confidence),
   themes: parse(row.themes, [] as string[]),
   affectedTickers: parse(row.affected_tickers, [] as string[]),
+  sourceTier: (Number(row.source_tier) || 3) as Catalyst["sourceTier"],
   sourceUrl: sOrNull(row.source_url),
   observationId: sOrNull(row.observation_id),
   dedupeKey: s(row.dedupe_key),
@@ -901,8 +903,8 @@ export class Store {
     const updatedAt = nowIso();
     const rows = await this.all(
       `INSERT INTO catalysts
-       (id, ticker, title, kind, status, date_start, date_end, confidence, themes, affected_tickers, source_url, observation_id, dedupe_key, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, ticker, title, kind, status, date_start, date_end, confidence, themes, affected_tickers, source_tier, source_url, observation_id, dedupe_key, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(dedupe_key) DO UPDATE SET
          status = excluded.status,
          date_start = excluded.date_start,
@@ -910,10 +912,11 @@ export class Store {
          confidence = excluded.confidence,
          themes = excluded.themes,
          affected_tickers = excluded.affected_tickers,
-         source_url = excluded.source_url,
+         source_tier = MIN(catalysts.source_tier, excluded.source_tier),
+         source_url = CASE WHEN excluded.source_tier <= catalysts.source_tier THEN excluded.source_url ELSE catalysts.source_url END,
          updated_at = excluded.updated_at
        RETURNING *`,
-      [newId(), c.ticker, c.title, c.kind, c.status, c.dateStart, c.dateEnd, c.confidence, json(c.themes), json(c.affectedTickers), c.sourceUrl, c.observationId, c.dedupeKey, updatedAt, updatedAt],
+      [newId(), c.ticker, c.title, c.kind, c.status, c.dateStart, c.dateEnd, c.confidence, json(c.themes), json(c.affectedTickers), c.sourceTier, c.sourceUrl, c.observationId, c.dedupeKey, updatedAt, updatedAt],
     );
     if (!rows[0]) throw new Error("upsertCatalyst returned no row");
     return toCatalyst(rows[0]);

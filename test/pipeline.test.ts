@@ -58,10 +58,10 @@ describe("pipeline", () => {
     const { store, source } = await setup();
     const extractor = { extract: async () => [{ ticker: "NVDA", title: "Product launch", kind: "product_launch" as const, status: "expected" as const, dateStart: "2026-06-01", dateEnd: "2026-06-01", confidence: 0.8, themes: [], affectedTickers: [] }] };
     const d = deps(store, { catalysts: extractor });
-    await processItems(d, source, [{ externalId: "1", title: "Nvidia schedules product launch for Q3 2026", url: "https://a.com/1" }]);
+    await processItems(d, source, [{ externalId: "1", title: "Nvidia schedules product launch for Q3 2026", url: "https://www.reuters.com/1" }]);
     const cats = await store.listCatalysts({ from: "2026-01-01", to: "2026-12-31" });
     expect(cats).toHaveLength(1);
-    expect(cats[0]).toMatchObject({ ticker: "NVDA", kind: "product_launch", sourceUrl: "https://a.com/1" });
+    expect(cats[0]).toMatchObject({ ticker: "NVDA", kind: "product_launch", sourceUrl: "https://reuters.com/1" });
     expect(cats[0]?.observationId).toEqual(expect.any(String));
   });
 

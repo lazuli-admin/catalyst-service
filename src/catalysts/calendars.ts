@@ -113,6 +113,6 @@ async function syncMacroDay(
   }
 }
 
-async function upsert(store: Pick<Store, "upsertCatalyst">, c: Omit<Catalyst, "id" | "createdAt" | "updatedAt" | "sourceUrl" | "observationId" | "dedupeKey"> & { sourceUrl?: null; observationId?: null }): Promise<void> {
-  await store.upsertCatalyst({ ...c, sourceUrl: null, observationId: null, dedupeKey: catalystDedupeKey(c) });
+async function upsert(store: Pick<Store, "upsertCatalyst">, c: Omit<Catalyst, "id" | "createdAt" | "updatedAt" | "sourceUrl" | "observationId" | "dedupeKey" | "sourceTier"> & { sourceUrl?: null; observationId?: null }): Promise<void> {
+  await store.upsertCatalyst({ ...c, sourceTier: 1, sourceUrl: null, observationId: null, dedupeKey: catalystDedupeKey(c) });
 }

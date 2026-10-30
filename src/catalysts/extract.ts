@@ -1,7 +1,8 @@
 import type { Catalyst, CatalystKind, CatalystStatus } from "../types.js";
 import { clamp01, errorMessage } from "../util.js";
 
-export type ExtractedCatalyst = Omit<Catalyst, "id" | "createdAt" | "updatedAt" | "observationId" | "sourceUrl" | "dedupeKey">;
+// sourceTier is derived from the source URL, not the model output; it is attached at upsert time.
+export type ExtractedCatalyst = Omit<Catalyst, "id" | "createdAt" | "updatedAt" | "observationId" | "sourceUrl" | "dedupeKey" | "sourceTier">;
 
 const KINDS: readonly CatalystKind[] = ["earnings", "regulatory_decision", "approval", "patent_expiry", "lockup_expiry", "deal_close", "shareholder_vote", "product_launch", "buildout_completion", "rule_effective", "index_rebalance", "macro", "investor_event", "litigation", "other"];
 const STATUSES: readonly CatalystStatus[] = ["expected", "confirmed", "occurred", "cancelled"];

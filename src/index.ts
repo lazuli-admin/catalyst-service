@@ -1,6 +1,7 @@
 import { loadConfig, type Config } from "./config.js";
 import { openStore, type Store } from "./db.js";
 import { createCatalystExtractor } from "./catalysts/extract.js";
+import { DEFAULT_THEMES, DEFAULT_WATCHLIST, runProspect } from "./catalysts/prospect.js";
 import { maybeSendDigest } from "./digest.js";
 import { runDueSources, type PipelineDeps } from "./pipeline.js";
 import { createLocalEmbedder, EventIndex, warmEventMemory } from "./events.js";
@@ -64,11 +65,25 @@ async function main(): Promise<void> {
 
   if (deps.events) await warmEventMemory(store, deps.events, deps.scorer, Date.now(), deps.log);
 
+  const watchlist = (process.env.CATALYST_WATCHLIST?.trim() || DEFAULT_WATCHLIST.join(",")).split(",").map((s) => s.trim()).filter(Boolean);
+  const prospect = () =>
+    deps.catalysts && deps.store
+      ? runProspect({ store, extractor: deps.catalysts, userAgent: config.userAgent, log: deps.log }, { watchlist, themes: [...DEFAULT_THEMES], maxItems: 60, perQuery: 5 })
+      : Promise.resolve({ queries: 0, items: 0, stored: 0 });
+  let lastProspectAt = 0;
+  const PROSPECT_INTERVAL_MS = 6 * 3600_000;
+  if (config.llm) void prospect();
+
   let running = false;
   const tick = async () => {
     if (running) return;
     running = true;
     try {
+      if (config.llm && Date.now() - lastProspectAt >= PROSPECT_INTERVAL_MS) {
+        lastProspectAt = Date.now();
+        const counts = await prospect();
+        deps.log?.(`prospect: ${counts.items} items from ${counts.queries} queries, ${counts.stored} catalysts`);
+      }
       await runDueSources(deps, config.pollIntervalSeconds);
       if (config.digestTime && config.barkUrl) {
         await maybeSendDigest(
