@@ -142,17 +142,18 @@ export function buildServer(store: Store, deps: PipelineDeps): FastifyInstance {
     to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     ticker: z.string().optional(),
     theme: z.string().optional(),
+    include_leads: z.string().optional(),
   });
   app.get("/catalysts", async (req) => {
     const q = CatalystQuery.parse(req.query);
     const today = new Date().toISOString().slice(0, 10);
     const to = q.to ?? new Date(Date.parse(today) + 90 * 86_400_000).toISOString().slice(0, 10);
-    return store.listCatalysts({ from: q.from ?? today, to, ticker: q.ticker, theme: q.theme });
+    return store.listCatalysts({ from: q.from ?? today, to, ticker: q.ticker, theme: q.theme, includeLeads: q.include_leads === "1" });
   });
   app.get("/catalysts/density", async (req) => {
-    const { days } = z.object({ days: z.coerce.number().int().min(1).max(365).default(90) }).parse(req.query);
+    const { days, include_leads } = z.object({ days: z.coerce.number().int().min(1).max(365).default(90), include_leads: z.string().optional() }).parse(req.query);
     const today = new Date().toISOString().slice(0, 10);
-    const cats = await store.listCatalysts({ from: today, to: new Date(Date.parse(today) + days * 86_400_000).toISOString().slice(0, 10) });
+    const cats = await store.listCatalysts({ from: today, to: new Date(Date.parse(today) + days * 86_400_000).toISOString().slice(0, 10), includeLeads: include_leads === "1" });
     return catalystDensity(cats, { today, horizonDays: days });
   });
 

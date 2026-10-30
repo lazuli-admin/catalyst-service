@@ -46,10 +46,10 @@ describe("sourceTier", () => {
 describe("acceptCatalyst", () => {
   const today = "2024-01-01";
 
-  it("accepts near-term catalysts with correct confidence", () => {
-    expect(acceptCatalyst({ dateStart: "2024-03-01", confidence: 0.4 }, 1, today)).toBe(true);
+  it("accepts near-term tier 1 catalysts as calendar entries, tier 2 only as leads", () => {
+    expect(acceptCatalyst({ dateStart: "2024-03-01", confidence: 0.4 }, 1, today)).toBe("calendar");
     expect(acceptCatalyst({ dateStart: "2024-03-01", confidence: 0.39 }, 1, today)).toBe(false);
-    expect(acceptCatalyst({ dateStart: "2024-03-01", confidence: 0.4 }, 2, today)).toBe(true);
+    expect(acceptCatalyst({ dateStart: "2024-03-01", confidence: 0.4 }, 2, today)).toBe("lead");
     expect(acceptCatalyst({ dateStart: "2024-03-01", confidence: 0.39 }, 2, today)).toBe(false);
   });
 
@@ -58,9 +58,9 @@ describe("acceptCatalyst", () => {
   });
 
   it("accepts far-term catalysts with stricter confidence", () => {
-    expect(acceptCatalyst({ dateStart: "2025-01-01", confidence: 0.5 }, 1, today)).toBe(true);
+    expect(acceptCatalyst({ dateStart: "2025-01-01", confidence: 0.5 }, 1, today)).toBe("calendar");
     expect(acceptCatalyst({ dateStart: "2025-01-01", confidence: 0.49 }, 1, today)).toBe(false);
-    expect(acceptCatalyst({ dateStart: "2025-01-01", confidence: 0.7 }, 2, today)).toBe(true);
+    expect(acceptCatalyst({ dateStart: "2025-01-01", confidence: 0.7 }, 2, today)).toBe("lead");
     expect(acceptCatalyst({ dateStart: "2025-01-01", confidence: 0.69 }, 2, today)).toBe(false);
   });
 

@@ -67,8 +67,9 @@ export async function runProspect(deps: ProspectDeps, opts: { watchlist: string[
           if (tier === 3) continue; // unverified source: skip the LLM call entirely
           const catalysts = await extractor.extract({ title: item.title, summary: item.summary, url: item.url, publishedAt: item.publishedAt });
           for (const c of catalysts) {
-            if (!acceptCatalyst(c, tier, today)) continue;
-            await store.upsertCatalyst({ ...c, sourceTier: tier, sourceUrl: item.url ?? null, observationId: null, dedupeKey: catalystDedupeKey(c) });
+            const decision = acceptCatalyst(c, tier, today);
+            if (!decision) continue;
+            await store.upsertCatalyst({ ...c, status: decision === "lead" ? "lead" : c.status, sourceTier: tier, sourceUrl: item.url ?? null, observationId: null, dedupeKey: catalystDedupeKey(c) });
             stored++;
           }
         } catch (err) {

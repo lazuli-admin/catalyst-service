@@ -21,7 +21,19 @@ describe("sanitizeCatalysts", () => {
       { catalysts: [{ ticker: "$aapl", kind: "nope", status: "weird", title: " T ", dateStart: "2026-03-05", dateEnd: "2026-03-01", confidence: 4, themes: [" EV "], affectedTickers: ["tsla"] }] },
       today,
     );
-    expect(c).toEqual({ ticker: "AAPL", title: "T", kind: "other", status: "expected", dateStart: "2026-03-01", dateEnd: "2026-03-05", confidence: 1, themes: ["ev"], affectedTickers: ["TSLA"] });
+    expect(c).toEqual({ ticker: "AAPL", title: "T", kind: "other", status: "scheduled", dateStart: "2026-03-01", dateEnd: "2026-03-05", datePrecision: "window", confidence: 1, themes: ["ev"], affectedTickers: ["TSLA"] });
+  });
+  it("keeps a supplied datePrecision and derives exact for single-day events", () => {
+    const [vague] = sanitizeCatalysts(
+      { catalysts: [{ title: "mid-2026 launch", kind: "product_launch", status: "scheduled", dateStart: "2026-06-01", dateEnd: "2026-06-30", datePrecision: "estimated", confidence: 0.5, themes: [], affectedTickers: [] }] },
+      today,
+    );
+    expect(vague?.datePrecision).toBe("estimated");
+    const [single] = sanitizeCatalysts(
+      { catalysts: [{ title: "one day", kind: "earnings", status: "confirmed", dateStart: "2026-03-10", dateEnd: "2026-03-10", confidence: 0.5, themes: [], affectedTickers: [] }] },
+      today,
+    );
+    expect(single?.datePrecision).toBe("exact");
   });
   it("drops invalid dates, fully past windows and non-items, caps at 10", () => {
     const past = { title: "old", kind: "earnings", dateStart: "2025-01-01", dateEnd: "2025-02-01" };
@@ -39,7 +51,7 @@ describe("createCatalystExtractor", () => {
     const fetchImpl = vi.fn(async () => jsonRes(JSON.stringify({ catalysts: [{ ticker: "nvda", kind: "earnings", title: "Q1 2027 report", status: "confirmed", dateStart: "2027-02-15", dateEnd: "2027-03-31", confidence: 0.8, themes: ["AI"], affectedTickers: ["amd"] }] })));
     const { extract } = createCatalystExtractor(llm, { fetch: fetchImpl as unknown as typeof fetch, now: () => new Date("2026-02-10T00:00:00Z") });
     const out = await extract({ title: "Nvidia schedules next report" });
-    expect(out).toEqual([{ ticker: "NVDA", kind: "earnings", title: "Q1 2027 report", status: "confirmed", dateStart: "2027-02-15", dateEnd: "2027-03-31", confidence: 0.8, themes: ["ai"], affectedTickers: ["AMD"] }]);
+    expect(out).toEqual([{ ticker: "NVDA", kind: "earnings", title: "Q1 2027 report", status: "confirmed", dateStart: "2027-02-15", dateEnd: "2027-03-31", datePrecision: "window", confidence: 0.8, themes: ["ai"], affectedTickers: ["AMD"] }]);
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("http://x/chat/completions");
     const body = JSON.parse(String(init.body));

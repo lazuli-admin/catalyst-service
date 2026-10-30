@@ -1,11 +1,12 @@
-import type { Catalyst, CatalystKind, CatalystStatus } from "../types.js";
+import type { Catalyst, CatalystKind, CatalystStatus, DatePrecision } from "../types.js";
 import { clamp01, errorMessage } from "../util.js";
 
 // sourceTier is derived from the source URL, not the model output; it is attached at upsert time.
-export type ExtractedCatalyst = Omit<Catalyst, "id" | "createdAt" | "updatedAt" | "observationId" | "sourceUrl" | "dedupeKey" | "sourceTier">;
+export type ExtractedCatalyst = Omit<Catalyst, "id" | "createdAt" | "updatedAt" | "observationId" | "sourceUrl" | "dedupeKey" | "sourceTier" | "impactWeight">;
 
 const KINDS: readonly CatalystKind[] = ["earnings", "regulatory_decision", "approval", "patent_expiry", "lockup_expiry", "deal_close", "shareholder_vote", "product_launch", "buildout_completion", "rule_effective", "index_rebalance", "macro", "investor_event", "litigation", "other"];
-const STATUSES: readonly CatalystStatus[] = ["expected", "confirmed", "occurred", "cancelled"];
+const STATUSES: readonly CatalystStatus[] = ["lead", "scheduled", "confirmed", "done", "cancelled"];
+const PRECISIONS: readonly DatePrecision[] = ["exact", "window", "estimated"];
 const MAX_CATALYSTS = 10;
 
 /** First 6 significant (alnum) words of the title, lowercased. */
@@ -39,7 +40,7 @@ export function sanitizeCatalysts(raw: unknown, today: string): ExtractedCatalys
     const c = item as Record<string, unknown> | null;
     if (!c || typeof c.title !== "string" || !c.title.trim()) continue;
     const kind = KINDS.includes(c.kind as CatalystKind) ? (c.kind as CatalystKind) : "other";
-    const status = STATUSES.includes(c.status as CatalystStatus) ? (c.status as CatalystStatus) : "expected";
+    const status = STATUSES.includes(c.status as CatalystStatus) ? (c.status as CatalystStatus) : "scheduled";
     const dates = [c.dateStart, c.dateEnd].map((d) => (typeof d === "string" && DATE_RE.test(d) ? d : null));
     if (dates.some((d) => d === null || Number.isNaN(Date.parse(d)))) continue;
     const [dateStart, dateEnd] = dates as [string, string];
@@ -55,6 +56,7 @@ export function sanitizeCatalysts(raw: unknown, today: string): ExtractedCatalys
       status,
       dateStart: start,
       dateEnd: end,
+      datePrecision: PRECISIONS.includes(c.datePrecision as DatePrecision) ? (c.datePrecision as DatePrecision) : start === end ? "exact" : "window",
       confidence,
       themes: cleanList(c.themes, (t) => (typeof t === "string" && t.trim() ? t.trim().toLowerCase() : null)),
       affectedTickers: cleanList(c.affectedTickers, cleanTicker),
@@ -64,8 +66,8 @@ export function sanitizeCatalysts(raw: unknown, today: string): ExtractedCatalys
   return out;
 }
 
-const SYSTEM_PROMPT = `Extract stock-moving FUTURE events from a news item into JSON {"catalysts":[{"ticker":string|null,"title":string,"kind":"earnings"|"regulatory_decision"|"approval"|"patent_expiry"|"lockup_expiry"|"deal_close"|"shareholder_vote"|"product_launch"|"buildout_completion"|"rule_effective"|"index_rebalance"|"macro"|"investor_event"|"litigation"|"other","status":"expected"|"confirmed","dateStart":"YYYY-MM-DD","dateEnd":"YYYY-MM-DD","confidence":0..1,"themes":[short lowercase strings],"affectedTickers":[tickers of other listed companies likely to react, e.g. suppliers/competitors]}]}.
-Only events dated in the future or a future window that could move a stock: earnings, FDA/regulatory decisions, approvals, patent/exclusivity expiries, lockup expiries, deal closings, shareholder votes, launches, buildout/plant completions, rule effective dates, index rebalances, macro releases, investor days, court rulings. Resolve relative dates ("Q1 2027" -> 2027-01-01..2027-03-31, "first half", "mid-2026") using the given today date. Omit anything already fully in the past or that only reports past results. Return {"catalysts":[]} if none.`;
+const SYSTEM_PROMPT = `Extract stock-moving FUTURE events from a news item into JSON {"catalysts":[{"ticker":string|null,"title":string,"kind":"earnings"|"regulatory_decision"|"approval"|"patent_expiry"|"lockup_expiry"|"deal_close"|"shareholder_vote"|"product_launch"|"buildout_completion"|"rule_effective"|"index_rebalance"|"macro"|"investor_event"|"litigation"|"other","status":"lead"|"scheduled"|"confirmed","dateStart":"YYYY-MM-DD","dateEnd":"YYYY-MM-DD","datePrecision":"exact"|"window"|"estimated","confidence":0..1,"themes":[short lowercase strings],"affectedTickers":[tickers of other listed companies likely to react, e.g. suppliers/competitors]}]}.
+Only events dated in the future or a future window that could move a stock: earnings, FDA/regulatory decisions, approvals, patent/exclusivity expiries, lockup expiries, deal closings, shareholder votes, launches, buildout/plant completions, rule effective dates, index rebalances, macro releases, investor days, court rulings. Resolve relative dates ("Q1 2027" -> 2027-01-01..2027-03-31, "first half", "mid-2026") using the given today date, with datePrecision "estimated" for vague ones ("mid-2026", "first half") and "window" for ranges. Omit anything already fully in the past or that only reports past results. Return {"catalysts":[]} if none.`;
 
 /**
  * LLM catalyst extractor: one chat-completions call, JSON mode, never throws.

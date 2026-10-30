@@ -78,8 +78,9 @@ async function mineCatalysts(deps: PipelineDeps, observation: Observation, judgm
   try {
     const extracted = await catalysts.extract({ title: observation.title, summary: observation.summary, url: observation.url, publishedAt: observation.publishedAt });
     for (const c of extracted) {
-      if (!acceptCatalyst(c, tier, today)) continue;
-      await deps.store.upsertCatalyst({ ...c, sourceTier: tier, sourceUrl: observation.url, observationId: observation.id, dedupeKey: catalystDedupeKey(c) });
+      const decision = acceptCatalyst(c, tier, today);
+      if (!decision) continue;
+      await deps.store.upsertCatalyst({ ...c, status: decision === "lead" ? "lead" : c.status, sourceTier: tier, sourceUrl: observation.url, observationId: observation.id, dedupeKey: catalystDedupeKey(c) });
     }
     if (extracted.length > 0) deps.log?.(`catalysts: extracted ${extracted.length} from ${observation.title}`);
   } catch (err) {

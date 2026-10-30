@@ -70,7 +70,10 @@ export interface Trade {
 
 export type CatalystKind = "earnings" | "regulatory_decision" | "approval" | "patent_expiry" | "lockup_expiry" | "deal_close" | "shareholder_vote" | "product_launch" | "buildout_completion" | "rule_effective" | "index_rebalance" | "macro" | "investor_event" | "litigation" | "other";
 
-export type CatalystStatus = "expected" | "confirmed" | "occurred" | "cancelled";
+export type CatalystStatus = "lead" | "scheduled" | "confirmed" | "done" | "cancelled";
+
+/** How precisely the date is known: an exact day, a window, or a model estimate. */
+export type DatePrecision = "exact" | "window" | "estimated";
 
 export interface Catalyst {
   id: string;
@@ -82,6 +85,7 @@ export interface Catalyst {
   dateStart: string;
   /** YYYY-MM-DD, latest expected; equal to dateStart when exact. */
   dateEnd: string;
+  datePrecision: DatePrecision;
   /** 0..1 */
   confidence: number;
   themes: string[];
@@ -89,11 +93,19 @@ export interface Catalyst {
   /** 1 = primary source (newswire/IR/gov), 2 = reputable press, 3 = everything else. */
   sourceTier: 1 | 2 | 3;
   sourceUrl: string | null;
+  /** Placeholder for (historical move x implied move); null until measured. */
+  impactWeight: number | null;
   observationId: string | null;
   dedupeKey: string;
   createdAt: string;
   updatedAt: string;
 }
+
+/** What callers pass when upserting a catalyst: datePrecision/impactWeight are derived/defaulted by the store. */
+export type CatalystInput = Omit<Catalyst, "id" | "createdAt" | "updatedAt" | "datePrecision" | "impactWeight"> & {
+  datePrecision?: DatePrecision;
+  impactWeight?: number | null;
+};
 
 export interface Watchlist {
   themes: Theme[];

@@ -39,11 +39,16 @@ export function sourceTier(input: { url?: string | null; title?: string }): Sour
   return 3;
 }
 
-export function acceptCatalyst(c: { dateStart: string; confidence: number }, tier: SourceTier, today: string): boolean {
+/** calendar = a primary-source calendar entry, lead = stored but hidden until a primary source confirms, false = reject. */
+export type AcceptDecision = "calendar" | "lead" | false;
+
+export function acceptCatalyst(c: { dateStart: string; confidence: number }, tier: SourceTier, today: string): AcceptDecision {
   // Only verified sources: tier 3 is never accepted.
   if (tier === 3) return false;
   const days = (Date.parse(c.dateStart) - Date.parse(today)) / 86_400_000;
   if (days > 730) return false;
-  if (days > 90) return c.confidence >= (tier === 1 ? 0.5 : 0.7);
-  return c.confidence >= 0.4;
+  // Tier 2 press never enters the calendar directly, only as a lead.
+  if (tier === 2) return c.confidence >= (days > 90 ? 0.7 : 0.4) ? "lead" : false;
+  if (days > 90) return c.confidence >= 0.5 ? "calendar" : false;
+  return c.confidence >= 0.4 ? "calendar" : false;
 }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { catalystDensity } from "../src/catalysts/density.js";
 import { memoryStore } from "./helpers.js";
 import type { Catalyst } from "../src/types.js";
 
@@ -6,14 +7,16 @@ const base: Omit<Catalyst, "id" | "createdAt" | "updatedAt"> = {
   ticker: "NVDA",
   title: "Q4 earnings call",
   kind: "earnings",
-  status: "expected",
+  status: "scheduled",
   dateStart: "2025-03-01",
   dateEnd: "2025-03-01",
+  datePrecision: "exact",
   confidence: 0.9,
   sourceTier: 1,
   themes: ["ai"],
   affectedTickers: ["NVDA"],
   sourceUrl: null,
+  impactWeight: null,
   observationId: null,
   dedupeKey: "nvda-q4-2025",
 };
@@ -57,5 +60,18 @@ describe("catalysts db", () => {
     await store.upsertCatalyst({ ...base, dedupeKey: "call-cancelled", status: "cancelled" });
     expect(await store.listCatalysts({ from: "2025-01-01", to: "2025-12-31" })).toHaveLength(1);
     expect(await store.listCatalysts({ from: "2025-01-01", to: "2025-12-31", includeCancelled: true })).toHaveLength(2);
+  });
+
+  it("excludes leads by default; includeLeads reveals them, and density never sees them", async () => {
+    const store = await memoryStore();
+    await store.upsertCatalyst(base);
+    await store.upsertCatalyst({ ...base, dedupeKey: "reuters-lead", status: "lead" });
+    expect(await store.listCatalysts({ from: "2025-01-01", to: "2025-12-31" })).toHaveLength(1);
+    const leads = await store.listCatalysts({ from: "2025-01-01", to: "2025-12-31", includeLeads: true });
+    expect(leads).toHaveLength(2);
+    expect(leads[1]!.status).toBe("lead");
+    const today = "2025-01-01";
+    expect(catalystDensity(await store.listCatalysts({ from: "2025-01-01", to: "2025-12-31" }), { today, horizonDays: 90 })).toHaveLength(1);
+    expect(catalystDensity(leads, { today, horizonDays: 90 })[0]!.count).toBe(2);
   });
 });

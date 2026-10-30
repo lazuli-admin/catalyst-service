@@ -79,8 +79,9 @@ await Promise.all(
         const cats = await extractor.extract(item);
         const tier = sourceTier({ url: item.url, title: item.title });
         for (const c of cats) {
-          if (!acceptCatalyst(c, tier, today)) continue;
-          await store.upsertCatalyst({ ...c, sourceTier: tier, sourceUrl: item.url ?? null, observationId: null, dedupeKey: catalystDedupeKey(c) });
+          const decision = acceptCatalyst(c, tier, today);
+          if (!decision) continue;
+          await store.upsertCatalyst({ ...c, status: decision === "lead" ? "lead" : c.status, sourceTier: tier, sourceUrl: item.url ?? null, observationId: null, dedupeKey: catalystDedupeKey(c) });
           extracted++;
         }
       } catch (err) {
