@@ -62,7 +62,7 @@ export function tradingDaysBetween(a: string, b: string): number {
   return count;
 }
 
-function leadBucket(dateStart: string, asOf: string): LeadBucket {
+export function leadBucket(dateStart: string, asOf: string): LeadBucket {
   const days = tradingDaysBetween(asOf, dateStart);
   if (days < 5) return "priced";
   if (days <= 30) return "actionable";
@@ -70,7 +70,7 @@ function leadBucket(dateStart: string, asOf: string): LeadBucket {
   return "distant";
 }
 
-function certainty(c: Catalyst): number {
+export function certainty(c: Catalyst): number {
   if (c.datePrecision === "exact") return PRECISION_MULTIPLIER.exact;
   if (c.datePrecision === "window") {
     const width = tradingDaysBetween(c.dateStart, c.dateEnd);

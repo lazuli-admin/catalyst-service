@@ -1,6 +1,8 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { z } from "zod";
 import { catalystDensity } from "./catalysts/density.js";
+import { rankCatalysts } from "./catalysts/ranked.js";
+import { renderCalendarPage } from "./catalysts/page.js";
 import type { Store } from "./db.js";
 import { processItems, runSource, type PipelineDeps } from "./pipeline.js";
 import { listAdapters, parseSourceConfig } from "./sources/registry.js";
@@ -68,11 +70,11 @@ const IdParam = z.object({ id: z.string() });
 export function buildServer(store: Store, deps: PipelineDeps): FastifyInstance {
   const app = Fastify({ logger: false });
 
-  // When CATALYST_API_KEY is set, every route except /health requires the x-api-key header.
+  // When CATALYST_API_KEY is set, only mutating methods require the x-api-key header (GET/HEAD are public).
   const apiKey = process.env.CATALYST_API_KEY;
   if (apiKey) {
     app.addHook("onRequest", async (req, reply) => {
-      if (req.url?.split("?")[0] === "/health") return;
+      if (req.method === "GET" || req.method === "HEAD") return;
       if ((req.headers["x-api-key"] as string | undefined) !== apiKey) return reply.status(401).send({ error: "unauthorized" });
     });
   }
@@ -152,18 +154,31 @@ export function buildServer(store: Store, deps: PipelineDeps): FastifyInstance {
     ticker: z.string().optional(),
     theme: z.string().optional(),
     include_leads: z.string().optional(),
+    all: z.string().optional(),
   });
   app.get("/catalysts", async (req) => {
     const q = CatalystQuery.parse(req.query);
     const today = new Date().toISOString().slice(0, 10);
     const to = q.to ?? new Date(Date.parse(today) + 90 * 86_400_000).toISOString().slice(0, 10);
-    return store.listCatalysts({ from: q.from ?? today, to, ticker: q.ticker, theme: q.theme, includeLeads: q.include_leads === "1" });
+    const cats = await store.listCatalysts({ from: q.from ?? today, to, ticker: q.ticker, theme: q.theme, includeLeads: q.include_leads === "1" });
+    return rankCatalysts(cats, { asOf: today, all: q.all === "1" });
   });
   app.get("/catalysts/density", async (req) => {
     const { days, include_leads } = z.object({ days: z.coerce.number().int().min(1).max(365).default(90), include_leads: z.string().optional() }).parse(req.query);
     const today = new Date().toISOString().slice(0, 10);
     const cats = await store.listCatalysts({ from: today, to: new Date(Date.parse(today) + days * 86_400_000).toISOString().slice(0, 10), includeLeads: include_leads === "1" });
     return catalystDensity(cats, { asOf: today });
+  });
+
+  // Public, like /health: server-rendered, no API key required.
+  app.get("/calendar", async (req, reply) => {
+    const { days, all } = z.object({ days: z.coerce.number().int().min(1).max(120).default(30), all: z.string().optional() }).parse(req.query);
+    const today = new Date().toISOString().slice(0, 10);
+    const cats = await store.listCatalysts({ from: today, to: new Date(Date.parse(today) + days * 86_400_000).toISOString().slice(0, 10), includeLeads: all === "1" });
+    return reply
+      .header("content-type", "text/html; charset=utf-8")
+      .header("cache-control", "public, max-age=300")
+      .send(renderCalendarPage({ cats, asOf: today, all: all === "1" }));
   });
 
   app.get("/observations", async (req) => store.listObservations(Limit.parse(req.query).limit));
