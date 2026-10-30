@@ -29,7 +29,7 @@ export function renderCalendarPage(opts: { cats: Catalyst[]; asOf: string; all: 
             const name = r.ticker ?? r.themes[0] ?? "MACRO";
             const href = safeHref(r.sourceUrl);
             const source = href ? ` <a href="${href}" target="_blank" rel="noopener">source</a>` : "";
-            return `<li><span class="score">${r.score.toFixed(1)}</span> <span class="badge b-${r.bucket}">${r.bucket}</span> <strong>${esc(name)}</strong> ${esc(r.title)} <span class="kind">${esc(r.kind)}</span>${source}</li>`;
+            return `<li>${r.focus ? "★" : ""}${r.pinned ? " 📌" : ""} <span class="score">${r.score.toFixed(1)}</span> <span class="badge b-${r.bucket}">${r.bucket}</span> <strong>${esc(name)}</strong> ${esc(r.title)} <span class="kind">${esc(r.kind)}</span>${source}</li>`;
           })
           .join("")}</ul>`,
     )

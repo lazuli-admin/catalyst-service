@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildServer } from "../src/server.js";
+import { renderCalendarPage } from "../src/catalysts/page.js";
 import { deps, memoryStore } from "./helpers.js";
-import type { CatalystInput } from "../src/types.js";
+import type { Catalyst, CatalystInput } from "../src/types.js";
 
 const KEY = "secret-key";
 let app: Awaited<ReturnType<typeof buildServer>>;
@@ -62,6 +63,21 @@ describe("GET /calendar", () => {
     await evil.ready();
     expect((await evil.inject({ method: "GET", url: "/calendar" })).body).not.toContain("javascript:");
     await evil.close();
+  });
+
+  it("renders ★ for focus and 📌 for pinned items", () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const full = (c: CatalystInput): Catalyst => ({ ...c, id: c.dedupeKey, datePrecision: "exact", impactWeight: null, createdAt: today, updatedAt: today }) as Catalyst;
+    const html = renderCalendarPage({
+      cats: [
+        full(cat({})),
+        full(cat({ ticker: null, kind: "macro", title: "US CPI release", dateStart: day(3), dateEnd: day(3), sourceUrl: null, dedupeKey: "cpi" })),
+      ],
+      asOf: today,
+      all: false,
+    });
+    expect(html).toContain("★");
+    expect(html).toContain("📌");
   });
 
   it("serves /catalysts publicly", async () => {

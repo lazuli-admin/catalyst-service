@@ -77,6 +77,20 @@ describe("syncFederalRegister", () => {
     expect(rows.every((r) => r.dedupeKey.startsWith("fr:"))).toBe(true);
   });
 
+  it("FCC: only spectrum/broadband/satellite/net-neutrality/merger rules are kept", async () => {
+    const fetchImpl = mockFetch({
+      "federal-communications-commission": {
+        results: [
+          { title: "Spectrum Sharing in the 6 GHz Band", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "fcc-1" },
+          { title: "Radio Broadcasting Services; FM Translator", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "fcc-2" },
+        ],
+      },
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
+    expect(catalysts(s).map((r) => r.title)).toEqual(["Spectrum Sharing in the 6 GHz Band"]);
+  });
+
   it("dates outside [today, today+horizon] are dropped", async () => {
     const fetchImpl = mockFetch({
       [FTC]: {
