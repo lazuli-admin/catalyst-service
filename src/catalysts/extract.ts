@@ -4,7 +4,7 @@ import { clamp01, errorMessage } from "../util.js";
 // sourceTier is derived from the source URL, not the model output; it is attached at upsert time.
 export type ExtractedCatalyst = Omit<Catalyst, "id" | "createdAt" | "updatedAt" | "observationId" | "sourceUrl" | "dedupeKey" | "sourceTier" | "impactWeight">;
 
-const KINDS: readonly CatalystKind[] = ["earnings", "regulatory_decision", "approval", "patent_expiry", "lockup_expiry", "deal_close", "shareholder_vote", "product_launch", "buildout_completion", "rule_effective", "index_rebalance", "macro", "investor_event", "litigation", "other"];
+const KINDS: readonly CatalystKind[] = ["earnings", "regulatory_decision", "approval", "phase3_readout", "patent_decision", "patent_expiry", "lockup_expiry", "deal_close", "shareholder_vote", "buyback_offering", "buildout_completion", "rule_effective", "index_rebalance", "macro", "election", "investor_event", "product_launch", "conference", "peer_read_across", "litigation", "other"];
 const STATUSES: readonly CatalystStatus[] = ["lead", "scheduled", "confirmed", "done", "cancelled"];
 const PRECISIONS: readonly DatePrecision[] = ["exact", "window", "estimated"];
 const MAX_CATALYSTS = 10;

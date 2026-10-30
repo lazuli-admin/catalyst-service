@@ -1,0 +1,28 @@
+name: catalyst
+
+services:
+  catalyst-service:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: catalyst-service:latest
+    container_name: catalyst-service
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - DATABASE_URL=file:/data/catalyst.db
+      - PORT=8787
+    volumes:
+      - catalyst-data:/data
+    ports:
+      - "8787:8787"
+    mem_limit: 512m
+    cpus: 0.5
+    networks:
+      - catalyst-net
+
+networks:
+  catalyst-net:
+
+volumes:
+  catalyst-data:

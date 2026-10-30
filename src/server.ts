@@ -68,6 +68,15 @@ const IdParam = z.object({ id: z.string() });
 export function buildServer(store: Store, deps: PipelineDeps): FastifyInstance {
   const app = Fastify({ logger: false });
 
+  // When CATALYST_API_KEY is set, every route except /health requires the x-api-key header.
+  const apiKey = process.env.CATALYST_API_KEY;
+  if (apiKey) {
+    app.addHook("onRequest", async (req, reply) => {
+      if (req.url?.split("?")[0] === "/health") return;
+      if ((req.headers["x-api-key"] as string | undefined) !== apiKey) return reply.status(401).send({ error: "unauthorized" });
+    });
+  }
+
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof z.ZodError) return reply.status(400).send({ error: "invalid_request", issues: err.issues });
     const status = (err as { statusCode?: number }).statusCode ?? 500;
@@ -154,7 +163,7 @@ export function buildServer(store: Store, deps: PipelineDeps): FastifyInstance {
     const { days, include_leads } = z.object({ days: z.coerce.number().int().min(1).max(365).default(90), include_leads: z.string().optional() }).parse(req.query);
     const today = new Date().toISOString().slice(0, 10);
     const cats = await store.listCatalysts({ from: today, to: new Date(Date.parse(today) + days * 86_400_000).toISOString().slice(0, 10), includeLeads: include_leads === "1" });
-    return catalystDensity(cats, { today, horizonDays: days });
+    return catalystDensity(cats, { asOf: today });
   });
 
   app.get("/observations", async (req) => store.listObservations(Limit.parse(req.query).limit));

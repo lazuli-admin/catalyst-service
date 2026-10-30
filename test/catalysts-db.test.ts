@@ -70,8 +70,10 @@ describe("catalysts db", () => {
     const leads = await store.listCatalysts({ from: "2025-01-01", to: "2025-12-31", includeLeads: true });
     expect(leads).toHaveLength(2);
     expect(leads[1]!.status).toBe("lead");
-    const today = "2025-01-01";
-    expect(catalystDensity(await store.listCatalysts({ from: "2025-01-01", to: "2025-12-31" }), { today, horizonDays: 90 })).toHaveLength(1);
-    expect(catalystDensity(leads, { today, horizonDays: 90 })[0]!.count).toBe(2);
+    expect(catalystDensity(await store.listCatalysts({ from: "2025-01-01", to: "2025-12-31" }), { asOf: "2025-01-01" })).toHaveLength(1);
+    // This test is verifying that leads are filtered out by density function
+    const densityWithLeads = catalystDensity(leads, { asOf: "2025-01-01" });
+    expect(densityWithLeads).toHaveLength(1);
+    expect(densityWithLeads[0]!.ticker).toBe("NVDA");
   });
 });

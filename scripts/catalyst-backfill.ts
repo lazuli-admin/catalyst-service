@@ -102,7 +102,7 @@ const upcoming = await store.listCatalysts({
   from: today,
   to: new Date(Date.parse(today) + HORIZON_DAYS * 86_400_000).toISOString().slice(0, 10),
 });
-const density = catalystDensity(upcoming, { today, horizonDays: HORIZON_DAYS })
+const density = catalystDensity(upcoming, { asOf: today })
   .slice(0, 15)
-  .map(({ ticker, score, count, kinds }) => ({ ticker, score, count, kinds }));
+  .map(({ ticker, score }) => ({ ticker, score }));
 console.log(JSON.stringify({ scanned: items.length, candidates: candidates.length, extracted, prospect, calendars: calendarCounts, upcoming, density }));

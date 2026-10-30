@@ -68,7 +68,28 @@ export interface Trade {
   createdAt: string;
 }
 
-export type CatalystKind = "earnings" | "regulatory_decision" | "approval" | "patent_expiry" | "lockup_expiry" | "deal_close" | "shareholder_vote" | "product_launch" | "buildout_completion" | "rule_effective" | "index_rebalance" | "macro" | "investor_event" | "litigation" | "other";
+export type CatalystKind =
+  | "earnings"
+  | "regulatory_decision"
+  | "approval"
+  | "phase3_readout"
+  | "patent_decision"
+  | "patent_expiry"
+  | "lockup_expiry"
+  | "deal_close"
+  | "shareholder_vote"
+  | "buyback_offering"
+  | "buildout_completion"
+  | "rule_effective"
+  | "index_rebalance"
+  | "macro"
+  | "election"
+  | "investor_event"
+  | "product_launch"
+  | "conference"
+  | "peer_read_across"
+  | "litigation"
+  | "other";
 
 export type CatalystStatus = "lead" | "scheduled" | "confirmed" | "done" | "cancelled";
 
