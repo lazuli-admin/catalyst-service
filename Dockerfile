@@ -14,7 +14,8 @@ ENV NODE_ENV=production PORT=8787 DATABASE_URL=file:/data/catalyst.db
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY --from=build /app/dist ./dist
-RUN groupadd -r catalyst && useradd -r -g catalyst catalyst && mkdir -p /data && chown catalyst:catalyst /data
+RUN groupadd -r catalyst && useradd -r -m -d /home/catalyst -g catalyst catalyst && mkdir -p /data && chown catalyst:catalyst /data
+ENV HOME=/home/catalyst
 USER catalyst
 VOLUME /data
 EXPOSE 8787

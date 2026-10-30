@@ -10,6 +10,7 @@ import { addPresetPillars, DEFAULT_SOURCES, PRESET_PILLARS, PRESET_THEMES, PRESE
 import { heuristicScorer } from "./scoring/heuristic.js";
 import { createLlmScorer } from "./scoring/llm.js";
 import { createLlmTriage } from "./scoring/triage.js";
+import { syncCalendars } from "./catalysts/calendars.js";
 import { buildServer } from "./server.js";
 import { errorMessage } from "./util.js";
 
@@ -66,6 +67,15 @@ async function main(): Promise<void> {
   if (deps.events) await warmEventMemory(store, deps.events, deps.scorer, Date.now(), deps.log);
 
   const watchlist = (process.env.CATALYST_WATCHLIST?.trim() || DEFAULT_WATCHLIST.join(",")).split(",").map((s) => s.trim()).filter(Boolean);
+  const minMarketCap = Number(process.env.CATALYST_MIN_MARKET_CAP ?? 50e9);
+  const calendarHorizonDays = Number(process.env.CALENDAR_HORIZON_DAYS ?? 45);
+  const syncCalendarsNow = () => {
+    void syncCalendars(store, { from: new Date().toISOString().slice(0, 10), days: calendarHorizonDays, watchlist, minMarketCap, log: (m) => deps.log?.(`[calendars] ${m}`) });
+  };
+  if (process.env.NODE_ENV !== "test") {
+    syncCalendarsNow();
+    setInterval(syncCalendarsNow, 12 * 3600_000).unref();
+  }
   const prospect = () =>
     deps.catalysts && deps.store
       ? runProspect({ store, extractor: deps.catalysts, userAgent: config.userAgent, log: deps.log }, { watchlist, themes: [...DEFAULT_THEMES], maxItems: 60, perQuery: 5 })
