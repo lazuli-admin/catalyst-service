@@ -2,6 +2,7 @@
 import type { Store } from "../db.js";
 import type { Catalyst } from "../types.js";
 import { catalystDedupeKey } from "./extract.js";
+import { syncElections, syncFederalRegister } from "./federal-register.js";
 import { errorMessage } from "../util.js";
 
 const NASDAQ_HEADERS = {
@@ -48,6 +49,8 @@ export async function syncCalendars(
   } catch (err) {
     log(`calendars failed: ${errorMessage(err)}`);
   }
+  await syncFederalRegister(store, { today: opts.from, horizonDays: opts.days, fetch: fetchImpl, log });
+  await syncElections(store, { today: opts.from, horizonDays: opts.days });
   return counts;
 }
 
