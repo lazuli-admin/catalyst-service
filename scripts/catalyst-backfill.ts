@@ -3,6 +3,7 @@
 import { DEFAULT_SOURCES } from "../src/presets.js";
 import { getAdapter, parseSourceConfig } from "../src/sources/registry.js";
 import type { RawItem } from "../src/types.js";
+import { syncCalendars } from "../src/catalysts/calendars.js";
 import { createCatalystExtractor, catalystDedupeKey } from "../src/catalysts/extract.js";
 import { catalystDensity } from "../src/catalysts/density.js";
 import { openStore } from "../src/db.js";
@@ -15,6 +16,8 @@ const USER_AGENT = env("USER_AGENT") ?? "catalyst-service backfill (admin@lazuli
 const LOOKBACK_HOURS = Number(env("LOOKBACK_HOURS") ?? 72);
 const MAX_ITEMS = Number(env("MAX_ITEMS") ?? 150);
 const DAYS = Number(env("DAYS") ?? 7);
+const WATCHLIST = (env("CATALYST_WATCHLIST") ?? "AAPL,MSFT,GOOGL,AMZN,META,NVDA,AMD,AVGO,TSM,AMAT,LRCX,KLAC,MRVL,LITE,CIEN,ORCL,NOW,APP,RDDT,TWLO,DOCN,CRWV,NBIS,MU,INTC,SNDK").split(",").map((s) => s.trim()).filter(Boolean);
+const MIN_MARKET_CAP = Number(env("CATALYST_MIN_MARKET_CAP") ?? 50e9);
 
 if (!API_KEY) {
   console.error("catalyst-backfill: set LLM_API_KEY (or OPENROUTER_API_KEY)");
@@ -80,7 +83,10 @@ await Promise.all(
   }),
 );
 
-// 4. Report.
+// 4. Pull scheduled earnings/macro calendars, then report.
+const calendarCounts = await syncCalendars(store, { from: today, days: DAYS + 7, watchlist: WATCHLIST, minMarketCap: MIN_MARKET_CAP, log: (m) => console.error(`[backfill] ${m}`) });
+
+// 5. Report.
 const upcoming = await store.listCatalysts({
   from: today,
   to: new Date(Date.parse(today) + DAYS * 86_400_000).toISOString().slice(0, 10),
@@ -88,4 +94,4 @@ const upcoming = await store.listCatalysts({
 const density = catalystDensity(upcoming, { today, horizonDays: DAYS })
   .slice(0, 15)
   .map(({ ticker, score, count, kinds }) => ({ ticker, score, count, kinds }));
-console.log(JSON.stringify({ scanned: items.length, candidates: candidates.length, extracted, upcoming, density }));
+console.log(JSON.stringify({ scanned: items.length, candidates: candidates.length, extracted, calendars: calendarCounts, upcoming, density }));
