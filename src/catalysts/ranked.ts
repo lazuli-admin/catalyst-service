@@ -32,7 +32,22 @@ export function isPrecise(c: Catalyst): boolean {
 /** Score and bucket catalysts for a ranked default view. Pure. */
 export function rankCatalysts(cats: Catalyst[], opts: { asOf: string; all?: boolean; watchlist?: string[]; impliedMove?: Record<string, number> }): RankedCatalyst[] {
   const watch = new Set((opts.watchlist ?? FOCUS_WATCHLIST).map((s) => s.toUpperCase()));
+  // Class shares (BRK.A/BRK.B) collapse to one earnings row per date, keeping the alphabetically last class.
+  const byClass = new Map<string, Catalyst[]>();
+  for (const c of cats) {
+    const m = c.kind === "earnings" ? /^(.+)\.[A-Z]$/.exec(c.ticker ?? "") : null;
+    if (m) {
+      const key = `${c.dateStart}|${m[1]}`;
+      (byClass.get(key) ?? byClass.set(key, []).get(key)!).push(c);
+    }
+  }
+  const dropClass = new Set<string>();
+  for (const list of byClass.values()) {
+    const keep = [...list].sort((a, b) => a.ticker!.localeCompare(b.ticker!)).at(-1)!;
+    for (const c of list) if (c !== keep) dropClass.add(c.id);
+  }
   const ranked = cats
+    .filter((c) => !dropClass.has(c.id))
     .filter((c) => {
       if (opts.all) return true;
       // Default view: decision-grade, precisely-dated upcoming events, plus pinned macro/elections.
@@ -46,8 +61,8 @@ export function rankCatalysts(cats: Catalyst[], opts: { asOf: string; all?: bool
       const focus = (c.ticker !== null && watch.has(c.ticker)) || c.affectedTickers.some((t) => watch.has(t));
       const pinned = isPinned(c);
       const im = c.kind === "earnings" ? opts.impliedMove?.[c.ticker ?? ""] : undefined;
-      // Lead-time multiplier removed (badges dropped as unverifiable); pinned macro carries weight 3.
-      let score = (pinned && c.kind === "macro" ? 3 : KIND_WEIGHTS[c.kind]) * certainty(c) * c.confidence;
+      // Lead-time multiplier removed (badges dropped as unverifiable); pinned macro/elections carry weight 3.
+      let score = (pinned ? 3 : KIND_WEIGHTS[c.kind]) * certainty(c) * c.confidence;
       if (focus || pinned) score *= 2;
       if (im != null) score *= Math.min(3, Math.max(0.5, im / 0.05));
       return {
@@ -59,5 +74,12 @@ export function rankCatalysts(cats: Catalyst[], opts: { asOf: string; all?: bool
         ...(im != null ? { impliedMove: im } : {}),
       };
     });
-  return ranked.sort((a, b) => b.score - a.score || Date.parse(a.dateStart) - Date.parse(b.dateStart) || a.id.localeCompare(b.id));
+  const kindRank = (k: Catalyst["kind"]) => (k === "macro" ? 0 : k === "election" ? 1 : 2);
+  return ranked.sort(
+    (a, b) =>
+      b.score - a.score ||
+      kindRank(a.kind) - kindRank(b.kind) ||
+      Date.parse(a.dateStart) - Date.parse(b.dateStart) ||
+      a.id.localeCompare(b.id),
+  );
 }

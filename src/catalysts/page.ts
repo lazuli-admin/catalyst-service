@@ -1,5 +1,5 @@
 import { rankCatalysts } from "./ranked.js";
-import { catalystDensity, CLUSTER_SPAN_DAYS, KIND_WEIGHTS, CLUSTER_BONUS_PER_KIND } from "./density.js";
+import { catalystDensity, CLUSTER_SPAN_DAYS, KIND_WEIGHTS, CLUSTER_BONUS_PER_KIND, type TickerDensity } from "./density.js";
 import { sectorOf } from "./sectors.js";
 import type { Catalyst } from "../types.js";
 
@@ -50,6 +50,58 @@ const dateSpan = (start: string, end: string) => {
   return sm === em ? `${MONTHS[sm - 1]} ${sd}–${ed}` : `${MONTHS[sm - 1]} ${sd} – ${MONTHS[em - 1]} ${ed}`;
 };
 
+/** Merged cluster summary for the page: one entry per group of per-ticker clusters sharing a tickerless catalyst. */
+export interface MaterialCluster {
+  score: number;
+  start: string;
+  end: string;
+  /** Union of the member clusters' events, dedupe by id, sorted by date then id. */
+  events: Catalyst[];
+  affectedTickers: string[];
+  themes: string[];
+  kinds: Catalyst["kind"][];
+}
+
+/** Merge per-ticker clusters that share any tickerless catalyst (same id) into one cluster each. Pure. */
+export function mergeSharedClusters(dens: TickerDensity[]): MaterialCluster[] {
+  type Node = MaterialCluster & { ids: Set<string> };
+  const nodes: Node[] = [];
+  for (const d of dens) {
+    for (const cluster of d.clusters) {
+      const events = d.items.map((i) => i.catalyst).filter((c) => c.dateStart >= cluster.start && c.dateStart <= cluster.end);
+      nodes.push({
+        score: d.score,
+        start: cluster.start,
+        end: cluster.end,
+        events,
+        affectedTickers: [...new Set(events.flatMap((c) => c.affectedTickers))],
+        themes: [...new Set(events.flatMap((c) => c.themes))],
+        kinds: [...new Set(events.map((c) => c.kind))],
+        ids: new Set(events.map((c) => c.id)),
+      });
+    }
+  }
+  const merged: Node[] = [];
+  for (const node of nodes) {
+    // Only a tickerless catalyst (it appears under each affected ticker) links clusters across tickers.
+    const anchor = [...node.ids].find((id) => node.events.find((e) => e.id === id)?.ticker === null);
+    const target = anchor ? merged.find((m) => m.ids.has(anchor)) : undefined;
+    if (!target) {
+      merged.push(node);
+      continue;
+    }
+    for (const e of node.events) if (!target.ids.has(e.id)) (target.ids.add(e.id), target.events.push(e));
+    target.affectedTickers = [...new Set([...target.affectedTickers, ...node.affectedTickers])];
+    target.themes = [...new Set([...target.themes, ...node.themes])];
+    target.kinds = [...new Set([...target.kinds, ...node.kinds])];
+    target.score = Math.max(target.score, node.score);
+    target.start = target.start < node.start ? target.start : node.start;
+    target.end = target.end > node.end ? target.end : node.end;
+  }
+  for (const m of merged) m.events.sort((a, b) => Date.parse(a.dateStart) - Date.parse(b.dateStart) || a.id.localeCompare(b.id));
+  return merged;
+}
+
 /** Server-rendered weekly calendar page over ranked catalysts. Pure; all text is HTML-escaped. */
 export function renderCalendarPage(opts: { cats: Catalyst[]; asOf: string; all: boolean; week?: string; hide?: string }): string {
   // All-or-nothing: any invalid token drops the whole hide param, so bad input renders as no-hide.
@@ -60,50 +112,48 @@ export function renderCalendarPage(opts: { cats: Catalyst[]; asOf: string; all: 
   const groupOf = (kind: string) => (kind === "earnings" ? "earnings" : kind === "macro" ? "macro" : "global");
   const week = weekSunday(opts.week && isDate(opts.week) ? opts.week : opts.asOf);
   const days = Array.from({ length: 7 }, (_, i) => new Date(Date.parse(`${week}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10));
-  const ranked = rankCatalysts(opts.cats, { asOf: opts.asOf, all: opts.all }).filter((r) => r.dateStart >= (days[0] ?? "") && r.dateStart <= (days[6] ?? ""));
+  const ranked = rankCatalysts(opts.cats, { asOf: opts.asOf, all: opts.all }).filter((r) => r.dateEnd >= (days[0] ?? "") && r.dateStart <= (days[6] ?? ""));
   const byDate = new Map<string, Ranked[]>();
   for (const r of ranked) {
-    const list = byDate.get(r.dateStart) ?? [];
-    list.push(r);
-    byDate.set(r.dateStart, list);
+    for (let d = Date.parse(`${r.dateStart}T00:00:00Z`); d <= Date.parse(`${r.dateEnd}T00:00:00Z`); d += 86_400_000) {
+      const date = new Date(d).toISOString().slice(0, 10);
+      if (date < (days[0] ?? "") || date > (days[6] ?? "")) continue; // clip to the shown week
+      const list = byDate.get(date) ?? [];
+      list.push(r);
+      byDate.set(date, list);
+    }
   }
   
   // Generate material clusters section
   const density = catalystDensity(opts.cats, { asOf: opts.asOf });
-  const materialClusters = density
-    .filter(d => d.clusters.length > 0)
+  const materialClusters = mergeSharedClusters(density)
     .sort((a, b) => b.score - a.score)
-    .map(d => {
-      const cluster = d.clusters[0]!; // Take the first cluster for simplicity (filter guarantees ≥1)
-      const kinds = [...new Set(cluster.kinds)];
-      const startDate = cluster.start;
-      const endDate = cluster.end;
-      
+    .map(mc => {
       // Build events list, showing each event's date certainty (exact / window / estimated)
-      const clusterEvents = d.items.filter(i => i.catalyst.dateStart >= startDate && i.catalyst.dateStart <= endDate);
-      const events = clusterEvents
-        .map(i => {
-          const eventDate = i.catalyst.dateStart;
-          const eventKind = i.catalyst.kind;
-          const eventTitle = esc(i.catalyst.title);
-          const eventSource = i.catalyst.sourceUrl ? `<a href="${safeHref(i.catalyst.sourceUrl)!}" target="_blank" rel="noopener">source</a>` : "";
-          return `<li>${eventDate} (${esc(i.catalyst.datePrecision)}) ${eventKind} ${eventTitle} ${eventSource}</li>`;
+      const events = mc.events
+        .map(c => {
+          const eventDate = c.dateStart;
+          const eventKind = c.kind;
+          const eventTitle = esc(c.title);
+          const eventSource = c.sourceUrl ? `<a href="${safeHref(c.sourceUrl)!}" target="_blank" rel="noopener">source</a>` : "";
+          return `<li>${eventDate} (${esc(c.datePrecision)}) ${eventKind} ${eventTitle} ${eventSource}</li>`;
         })
         .join("");
-      const names = [...new Set(clusterEvents.map(i => shortName(i.catalyst)))].join(" + ");
+      const names = [...new Set(mc.events.map(shortName))].join(" + ");
       
-      const k = kinds.length;
-      const days = Math.round((Date.parse(`${cluster.start}T00:00:00Z`) - Date.parse(`${opts.asOf}T00:00:00Z`)) / 86_400_000);
-      const whyMaterial = esc(`${k} distinct catalyst types within ${CLUSTER_SPAN_DAYS} trading days (` + kinds.map(kind => `${kind}: tier ${KIND_WEIGHTS[kind]}`).join(", ") + `); cluster bonus +${(CLUSTER_BONUS_PER_KIND*(k-1)).toFixed(1)}; first event ${days === 0 ? "today" : `in ${days}d`}.`);
+      const k = mc.kinds.length;
+      const days = Math.round((Date.parse(`${mc.start}T00:00:00Z`) - Date.parse(`${opts.asOf}T00:00:00Z`)) / 86_400_000);
+      const whyMaterial = esc(`${k} distinct catalyst types within ${CLUSTER_SPAN_DAYS} trading days (` + mc.kinds.map(kind => `${kind}: tier ${KIND_WEIGHTS[kind]}`).join(", ") + `); cluster bonus +${(CLUSTER_BONUS_PER_KIND*(k-1)).toFixed(1)}; first event ${days === 0 ? "today" : `in ${days}d`}.`);
 
-      const affectedTickers = esc(d.items.flatMap(i => i.catalyst.affectedTickers).filter((v, i, a) => a.indexOf(v) === i).join(", "));
-      const themes = esc(d.items.flatMap(i => i.catalyst.themes).filter((v, i, a) => a.indexOf(v) === i).join(", "));
+      const affectedTickers = esc(mc.affectedTickers.join(", "));
+      const themes = esc(mc.themes.join(", "));
+      const mainTicker = mc.events.map(c => c.ticker).find(Boolean) ?? "";
       
-      return `<details class="cluster"><summary>${esc(names)} · ${d.score.toFixed(1)} · ${esc(dateSpan(startDate, endDate))}</summary>
+      return `<details class="cluster"><summary>${esc(names)} · ${mc.score.toFixed(1)} · ${esc(dateSpan(mc.start, mc.end))}</summary>
         <ul>${events}</ul>
         <p>Why material: ${whyMaterial}</p>
         <p>Likely affected: ${affectedTickers || "none"}; Themes: ${themes || "none"}</p>
-        <p>Sector: ${esc(sectorOf(d.ticker).sector)}; peers: ${esc(sectorOf(d.ticker).peers.join(", "))}</p>
+        <p>Sector: ${esc(sectorOf(mainTicker).sector)}; peers: ${esc(sectorOf(mainTicker).peers.join(", "))}</p>
       </details>`;
     })
     .join("");

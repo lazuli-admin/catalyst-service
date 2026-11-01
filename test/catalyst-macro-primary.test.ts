@@ -72,7 +72,7 @@ describe("syncPrimaryMacro", () => {
     await syncPrimaryMacro(s as never, { today: "2026-12-01", horizonDays: 30, blsSchedule: "/nonexistent.json", fetch: mockFetch({}, FOMC_HTML) as unknown as typeof fetch });
     const fed = rows(s).filter((r) => r.dedupeKey.startsWith("fed:"));
     expect(fed.map((r) => [r.title, r.dateStart, r.dateEnd, r.dedupeKey])).toEqual([
-      ["FOMC rate decision (meeting Dec 8–Dec 9) + SEP", "2026-12-09", "2026-12-09", "fed:fomc:2026-12-08"],
+      ["FOMC rate decision Dec 9 (meeting Dec 8–Dec 9) + SEP", "2026-12-08", "2026-12-09", "fed:fomc:2026-12-08"],
     ]);
     expect(fed.every((r) => r.sourceUrl === FOMC_URL && r.confidence === 1 && r.sourceTier === 1)).toBe(true);
   });

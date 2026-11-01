@@ -97,6 +97,34 @@ describe("rankCatalysts", () => {
     expect(by.get("Off-watchlist earnings")).toBeCloseTo(3);
   });
 
+  it("elections are pinned with weight 3 like macro and rank right after macro at equal score", () => {
+    const rows = rankCatalysts(
+      [
+        cat({ ticker: null, kind: "election", title: "US midterm elections", dateStart: "2026-03-25" }),
+        cat({ ticker: null, kind: "macro", title: "US CPI: October inflation print", dateStart: "2026-03-25" }),
+        cat({ ticker: null, kind: "macro", title: "US Retail Sales", dateStart: "2026-03-25" }),
+      ],
+      { asOf: TODAY, watchlist: [], all: true },
+    );
+    const by = new Map(rows.map((r) => [r.title, r.score]));
+    expect(by.get("US midterm elections")).toBeCloseTo(6); // same as pinned macro
+    expect(rows.map((r) => r.title)).toEqual(["US CPI: October inflation print", "US midterm elections", "US Retail Sales"]);
+  });
+
+  it("collapses class-share earnings (BRK.A/BRK.B) to one row per date, keeping the alphabetically last class", () => {
+    const rows = rankCatalysts(
+      [
+        cat({ id: "a1", ticker: "BRK.A", title: "Berkshire A earnings", dateStart: "2026-03-25" }),
+        cat({ id: "b1", ticker: "BRK.B", title: "Berkshire B earnings", dateStart: "2026-03-25" }),
+        cat({ id: "a2", ticker: "BRK.A", title: "Berkshire A earnings", dateStart: "2026-03-26" }),
+        cat({ id: "x1", ticker: "MSFT", title: "Microsoft earnings", dateStart: "2026-03-25" }),
+      ],
+      { asOf: TODAY, watchlist: [], all: true },
+    );
+    expect(rows.map((r) => r.id)).toEqual(["b1", "x1", "a2"]); // BRK.A on 03-25 dropped, other dates untouched
+    expect(rows[0]!.title).toBe("Berkshire B earnings");
+  });
+
   it("focus earnings and pinned macro rank above off-watchlist earnings regardless of days out", () => {
     const rows = rankCatalysts(
       [
@@ -108,7 +136,8 @@ describe("rankCatalysts", () => {
       ],
       { asOf: TODAY, watchlist: ["NVDA"] },
     );
-    expect(rows.map((r) => r.id)).toEqual(["cpi-far", "focus-far", "jolts-far", "off-now", "off-far"]);
+    // kind tie-break: macro sorts before earnings at equal score
+    expect(rows.map((r) => r.id)).toEqual(["cpi-far", "jolts-far", "focus-far", "off-now", "off-far"]);
     expect(rows[0]!.score).toBeCloseTo(6);
   });
 

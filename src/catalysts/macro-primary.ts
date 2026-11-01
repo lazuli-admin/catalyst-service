@@ -141,9 +141,9 @@ async function syncFomc(store: Pick<Store, "upsertCatalyst">, opts: { today: str
     store,
     opts,
     parseFomcMeetings(html, Number(opts.today.slice(0, 4))).map((mtg) => ({
-      date: mtg.dateEnd,
+      date: mtg.dateStart,
       dateEnd: mtg.dateEnd,
-      title: `FOMC rate decision (meeting ${fmt(mtg.dateStart)}–${fmt(mtg.dateEnd)})${mtg.sep ? " + SEP" : ""}`,
+      title: `FOMC rate decision ${fmt(mtg.dateEnd)} (meeting ${fmt(mtg.dateStart)}–${fmt(mtg.dateEnd)})${mtg.sep ? " + SEP" : ""}`,
       dedupeKey: `fed:fomc:${mtg.dateStart}`,
       sourceUrl: FOMC_URL,
     })),

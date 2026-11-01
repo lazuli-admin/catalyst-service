@@ -253,6 +253,17 @@ describe("renderCalendarPage", () => {
     expect(html).not.toContain("N distinct");
   });
 
+  it("shows multi-day events on every day of their range in the shown week", () => {
+    const wk = weekSunday("2026-06-10");
+    const wd = (i: number) => new Date(Date.parse(wk) + i * 86_400_000).toISOString().slice(0, 10);
+    const html = renderCalendarPage({
+      cats: [full(cat({ ticker: null, kind: "macro", title: "FOMC rate decision Jun 17 (meeting Jun 16–Jun 17)", dateStart: wd(2), dateEnd: wd(3), sourceUrl: null, dedupeKey: "fomc" }))],
+      asOf: wk,
+      all: false,
+    });
+    expect(html.match(/FOMC rate decision/g)?.length).toBe(2); // once per day cell
+  });
+
   it("escapes affected tickers in cluster section", () => {
     const wk = weekSunday("2026-06-10");
     const wd = (i: number) => new Date(Date.parse(wk) + i * 86_400_000).toISOString().slice(0, 10);
