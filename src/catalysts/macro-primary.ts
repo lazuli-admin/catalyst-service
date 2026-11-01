@@ -38,7 +38,7 @@ function fmt(date: string): string {
 }
 
 function horizonEnd(today: string, horizonDays: number): string {
-  return new Date(Date.parse(`${today}T00:00:00Z`) + horizonDays * 86_400_000).toISOString().slice(0, 10);
+  return new Date(Date.parse(`${today}T00:00:00Z`) + horizonDays * 86_400_000).toISOString().slice(0, 10); // clock-guard: pure-date
 }
 
 async function fetchJson(url: string, fetchImpl: typeof fetch): Promise<unknown> {

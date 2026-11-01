@@ -1,5 +1,5 @@
 import type { Catalyst, CatalystKind, CatalystStatus, DatePrecision } from "../types.js";
-import { nyDate } from "../clock.js";
+import { marketToday, systemClock, type Clock } from "../clock.js";
 import { clamp01, errorMessage } from "../util.js";
 
 // sourceTier is derived from the source URL, not the model output; it is attached at upsert time.
@@ -73,9 +73,9 @@ Only events dated in the future or a future window that could move a stock: earn
 /**
  * LLM catalyst extractor: one chat-completions call, JSON mode, never throws.
  */
-export function createCatalystExtractor(llm: { apiKey: string; baseUrl: string; model: string; maxTokens?: number }, opts?: { fetch?: typeof fetch; now?: () => Date }) {
+export function createCatalystExtractor(llm: { apiKey: string; baseUrl: string; model: string; maxTokens?: number }, opts?: { fetch?: typeof fetch; clock?: Clock }) {
   const fetchImpl = opts?.fetch ?? fetch;
-  const now = opts?.now ?? (() => new Date());
+  const clock = opts?.clock ?? systemClock;
   return {
     async extract(item: { title: string; summary?: string; url?: string | null; publishedAt?: string | null }): Promise<ExtractedCatalyst[]> {
       try {
@@ -89,14 +89,14 @@ export function createCatalystExtractor(llm: { apiKey: string; baseUrl: string; 
             ...(llm.maxTokens ? { max_tokens: llm.maxTokens } : {}),
             response_format: { type: "json_object" },
             messages: [
-              { role: "system", content: `${SYSTEM_PROMPT}\nToday is ${nyDate(now())}.` },
+              { role: "system", content: `${SYSTEM_PROMPT}\nToday is ${marketToday(clock)}.` },
               { role: "user", content: JSON.stringify({ title: item.title, summary: item.summary ?? "", url: item.url ?? null, publishedAt: item.publishedAt ?? null }) },
             ],
           }),
         });
         if (!res.ok) return [];
         const body = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-        return sanitizeCatalysts(JSON.parse(body.choices?.[0]?.message?.content ?? ""), nyDate(now()));
+        return sanitizeCatalysts(JSON.parse(body.choices?.[0]?.message?.content ?? ""), marketToday(clock));
       } catch (err) {
         console.error(`[catalyst-extract] ${errorMessage(err)}`);
         return [];

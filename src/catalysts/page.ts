@@ -10,14 +10,14 @@ const safeHref = (u: string | null) => (u && /^https?:\/\//i.test(u) ? esc(u) : 
 export const isDate = (s: string) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
   const t = Date.parse(`${s}T00:00:00Z`);
-  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === s;
+  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === s; // clock-guard: pure-date
 };
 
 /** Sunday of the week containing the given YYYY-MM-DD date (UTC). */
 export function weekSunday(date: string): string {
   const [y = 1970, m = 1, d = 1] = date.split("-").map(Number);
   const t = Date.UTC(y, m - 1, d);
-  return new Date(t - new Date(t).getUTCDay() * 86_400_000).toISOString().slice(0, 10);
+  return new Date(t - new Date(t).getUTCDay() * 86_400_000).toISOString().slice(0, 10); // clock-guard: pure-date
 }
 
 type Ranked = Catalyst & { score: number; focus?: boolean; pinned?: boolean };
@@ -113,12 +113,12 @@ export function renderCalendarPage(opts: { cats: Catalyst[]; asOf: string; all: 
   );
   const groupOf = (c: Catalyst) => (isPolicyCatalyst(c) ? "policy" : c.kind === "earnings" ? "earnings" : c.kind === "macro" ? "macro" : "global");
   const week = weekSunday(opts.week && isDate(opts.week) ? opts.week : opts.asOf);
-  const days = Array.from({ length: 7 }, (_, i) => new Date(Date.parse(`${week}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10));
+  const days = Array.from({ length: 7 }, (_, i) => new Date(Date.parse(`${week}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10)); // clock-guard: pure-date
   const ranked = rankCatalysts(opts.cats, { asOf: opts.asOf, all: opts.all }).filter((r) => r.dateEnd >= (days[0] ?? "") && r.dateStart <= (days[6] ?? ""));
   const byDate = new Map<string, Ranked[]>();
   for (const r of ranked) {
     for (let d = Date.parse(`${r.dateStart}T00:00:00Z`); d <= Date.parse(`${r.dateEnd}T00:00:00Z`); d += 86_400_000) {
-      const date = new Date(d).toISOString().slice(0, 10);
+      const date = new Date(d).toISOString().slice(0, 10); // clock-guard: pure-date
       if (date < (days[0] ?? "") || date > (days[6] ?? "")) continue; // clip to the shown week
       const list = byDate.get(date) ?? [];
       list.push(r);
@@ -184,8 +184,8 @@ export function renderCalendarPage(opts: { cats: Catalyst[]; asOf: string; all: 
   const [wy = 0, wm = 0, wd = 0] = week.split("-").map(Number);
   const hasWeek = !!(opts.week && isDate(opts.week));
   const keep = { all: opts.all, hide: [...hidden] };
-  const prev = new Date(Date.parse(`${week}T00:00:00Z`) - 7 * 86_400_000).toISOString().slice(0, 10);
-  const next = new Date(Date.parse(`${week}T00:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10);
+  const prev = new Date(Date.parse(`${week}T00:00:00Z`) - 7 * 86_400_000).toISOString().slice(0, 10); // clock-guard: pure-date
+  const next = new Date(Date.parse(`${week}T00:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10); // clock-guard: pure-date
   const pills = (["earnings", "macro", "policy", "global"] as const)
     .map((g) => {
       const on = !hidden.has(g);

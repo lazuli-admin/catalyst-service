@@ -51,7 +51,7 @@ export async function syncCalendars(
   await store.purgeLegacyMacro();
   try {
     for (let i = 0; i < opts.days; i++) {
-      const date = new Date(Date.parse(`${opts.from}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10);
+      const date = new Date(Date.parse(`${opts.from}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10); // clock-guard: pure-date
       const day = new Date(`${date}T00:00:00Z`).getUTCDay();
       if (day === 0 || day === 6) continue; // Sat/Sun
       await syncEarningsDay(store, date, { fetchImpl, watch, minMarketCap: opts.minMarketCap, log, counts });

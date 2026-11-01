@@ -72,7 +72,7 @@ function parseAbstractEndDate(abstract: string): string | null {
   const m = END_DATE_RE.exec(abstract);
   if (!m) return null;
   const ts = Date.parse(`${m[1]!.replace(/\s+/g, " ")} UTC`);
-  return Number.isFinite(ts) ? new Date(ts).toISOString().slice(0, 10) : null;
+  return Number.isFinite(ts) ? new Date(ts).toISOString().slice(0, 10) : null; // clock-guard: pure-date
 }
 
 const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -83,7 +83,7 @@ function fmtDate(date: string): string {
 }
 
 function horizonEnd(today: string, horizonDays: number): string {
-  return new Date(Date.parse(`${today}T00:00:00Z`) + horizonDays * 86_400_000).toISOString().slice(0, 10);
+  return new Date(Date.parse(`${today}T00:00:00Z`) + horizonDays * 86_400_000).toISOString().slice(0, 10); // clock-guard: pure-date
 }
 
 async function fetchJson(url: string, fetchImpl: typeof fetch): Promise<unknown> {
@@ -101,7 +101,7 @@ export async function syncFederalRegister(
   const runStart = new Date().toISOString();
   let allAgenciesOk = true;
   const end = horizonEnd(opts.today, opts.horizonDays);
-  const gte = new Date(Date.parse(`${opts.today}T00:00:00Z`) - 400 * 86_400_000).toISOString().slice(0, 10);
+  const gte = new Date(Date.parse(`${opts.today}T00:00:00Z`) - 400 * 86_400_000).toISOString().slice(0, 10); // clock-guard: pure-date
   const fields = ["title", "effective_on", "publication_date", "html_url", "abstract", "document_number", "comments_close_on", "type", "dates"]
     .map((f) => `fields[]=${f}`)
     .join("&");
@@ -139,7 +139,7 @@ export async function syncFederalRegister(
           ? parseAbstractEndDate(abstract)
           : null;
         if (abstractEnd) {
-          const next = new Date(Date.parse(`${abstractEnd}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+          const next = new Date(Date.parse(`${abstractEnd}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10); // clock-guard: pure-date
           if (inWindow(next)) candidates.push({ date: next, isEnd: true });
         }
         const seen = new Set<string>();

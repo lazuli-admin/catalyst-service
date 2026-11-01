@@ -6,6 +6,7 @@ import type { DigestRow, Store } from "./db.js";
 import { isNearMiss, latencyMinutes, pushesSince } from "./digest.js";
 import type { Push } from "./market.js";
 import type { EventCandidate, EventIndex } from "./events.js";
+import { fixedClock } from "./clock.js";
 import { processItems, type PipelineDeps } from "./pipeline.js";
 import { heuristicScorer } from "./scoring/heuristic.js";
 import type { JudgeContext, JudgmentDraft, Scorer } from "./scoring/types.js";
@@ -210,7 +211,7 @@ export async function replayHistory(
       summary: row.summary || undefined,
       publishedAt: row.publishedAt ?? undefined,
     };
-    await processItems({ ...deps, now: () => new Date(row.fetchedAt) }, source, [item], { baseline: row.baseline });
+    await processItems({ ...deps, clock: fixedClock(row.fetchedAt) }, source, [item], { baseline: row.baseline });
   }
 
   const epoch = new Date(0).toISOString();
