@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
+import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { catalystDensity } from "./catalysts/density.js";
 import { rankCatalysts } from "./catalysts/ranked.js";
@@ -68,16 +69,27 @@ const IngestBody = z.object({
 const Limit = z.object({ limit: z.coerce.number().int().min(1).max(500).default(50) });
 const IdParam = z.object({ id: z.string() });
 
+// Length-safe constant-time comparison: pads by comparing b against itself when lengths differ, so the
+// timing profile does not leak whether the key length matched.
+export function safeEqual(a: string | undefined, b: string): boolean {
+  const bb = Buffer.from(b);
+  if (a === undefined) return timingSafeEqual(bb, bb) && false;
+  const ab = Buffer.from(a);
+  if (ab.length !== bb.length) return timingSafeEqual(bb, bb) && false;
+  return timingSafeEqual(ab, bb);
+}
+
 export function buildServer(store: Store, deps: PipelineDeps): FastifyInstance {
   const clock = deps.clock ?? systemClock;
   const app = Fastify({ logger: false });
 
   // When CATALYST_API_KEY is set, only mutating methods require the x-api-key header (GET/HEAD are public).
-  const apiKey = process.env.CATALYST_API_KEY;
+  const apiKey = process.env.CATALYST_API_KEY?.trim();
+  if (process.env.NODE_ENV === "production" && !apiKey) throw new Error("CATALYST_API_KEY must be set in production");
   if (apiKey) {
     app.addHook("onRequest", async (req, reply) => {
       if (req.method === "GET" || req.method === "HEAD") return;
-      if ((req.headers["x-api-key"] as string | undefined) !== apiKey) return reply.status(401).send({ error: "unauthorized" });
+      if (!safeEqual(req.headers["x-api-key"] as string | undefined, apiKey)) return reply.status(401).send({ error: "unauthorized" });
     });
   }
 
