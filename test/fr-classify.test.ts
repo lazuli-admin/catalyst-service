@@ -366,6 +366,26 @@ describe("fr-classify presidential operative markers", () => {
     expect(r.dedupeKey).toBe("fr:2025-19826:2026-11-10");
   });
 
+  it("marker 'I hereby determine' (determination without order): split begins at the marker", () => {
+    const d = presDoc("By the authority vested in me, I hereby\n  determine, pursuant to section 303(a)(5) of the Act, that: the resources are essential.");
+    expect(hasOperativeMarker(d)).toBe(true);
+    const { operative } = operativeText(d);
+    expect(operative.replace(/\s+/g, " ").trim().startsWith("I hereby determine")).toBe(true);
+  });
+
+  it("marker 'I hereby determine and order:' still matches", () => {
+    const d = presDoc("By the authority vested in me, I hereby determine and order: Effective December 1, 2026, the duties apply.");
+    expect(hasOperativeMarker(d)).toBe(true);
+  });
+
+  it("fixture 2026-08010 (real FR metadata + raw text): marker found, but no role dates → no rows on 2026-11-01", () => {
+    const fixture = JSON.parse(
+      readFileSync(join(dirname(fileURLToPath(import.meta.url)), "fixtures", "fr-dpa-2026-08010.json"), "utf8"),
+    ) as FrApiDoc;
+    expect(hasOperativeMarker(fixture)).toBe(true);
+    expect(classify(fixture, WINDOW)).toEqual([]);
+  });
+
   // Each text has a preamble role date (2027-01-15, in window) that MUST NOT be emitted: only the
   // marker splits it off into the preamble. Exactly one marker per text.
   const cases: [string, string][] = [

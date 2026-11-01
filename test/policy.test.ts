@@ -33,6 +33,7 @@ describe("frDocNumbersFromEvents", () => {
     expect(nums.has("2025-21671")).toBe(true);
     expect(nums.has("2025-19873")).toBe(true);
     expect(nums.has("2026-21755")).toBe(true);
+    expect(nums.has("2026-19537")).toBe(true); // s232-polysilicon-effective related FR doc (stockpiling bridge rule)
   });
 
   it("fails closed: rejects on a nonexistent path (including ENOENT)", async () => {
@@ -57,6 +58,7 @@ describe("frDocNumbersFromEvents", () => {
   });
 
   it.todo("step 7: one event, multiple FR docs (2025-19873 basis, 2026-21755 proposed extension) → one canonical row");
+  it.todo("step 7: one event, multiple FR docs (Proclamation 11052 polysilicon basis + 2026-19537 stockpiling bridge rule) → one canonical row");
 });
 
 const store = () => ({

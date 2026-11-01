@@ -114,6 +114,7 @@ export const PRESIDENTIAL_OPERATIVE_MARKERS: RegExp[] = [
   /proclaim\s+as\s+follows/i,
   /(?:it\s+is\s+)?hereby\s+(?:determine\s+and\s+)?order(?:ed)?\b/i,
   /\bI\s+hereby\s+direct\b/i,
+  /\bI\s+hereby\s+determine\b/i,
   /\bSec\.\s+1\./i,
   /\bSection\s+1\./i,
 ];
