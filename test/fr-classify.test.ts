@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { classify, operativeText, parseTextDates, roleDates, type FrApiDoc } from "../src/catalysts/fr-classify.js";
+import { classify, hasOperativeMarker, operativeText, parseTextDates, roleDates, type FrApiDoc } from "../src/catalysts/fr-classify.js";
 
 const WINDOW = { today: "2026-11-01", end: "2027-05-01" };
 
@@ -252,6 +252,69 @@ describe("fr-classify synthetic", () => {
       const rows = classify(base({ type: "Presidential Document", subtype: "Proclamation", bodyText: body }), WINDOW);
       expect(rows).toEqual([]);
     }
+  });
+});
+
+describe("fr-classify presidential operative markers", () => {
+  const presDoc = (bodyText: string): FrApiDoc => ({
+    title: "Test proclamation",
+    type: "Presidential Document",
+    subtype: "Proclamation",
+    abstract: null,
+    dates: null,
+    effective_on: null,
+    comments_close_on: null,
+    document_number: "2026-1-MARK",
+    html_url: "https://example.gov/doc",
+    agencyLabel: "President",
+    bodyText,
+  });
+
+  it("fixture 2025-19826 (real FR metadata + raw text): one exact presidential_action on 2026-11-10", () => {
+    const fixture = JSON.parse(
+      readFileSync(join(dirname(fileURLToPath(import.meta.url)), "fixtures", "fr-eo-2025-19826.json"), "utf8"),
+    ) as FrApiDoc;
+    expect(hasOperativeMarker(fixture)).toBe(true);
+    const rows = classify(fixture, WINDOW);
+    expect(rows).toHaveLength(1);
+    const r = rows[0]!;
+    expect(r.kind).toBe("presidential_action");
+    expect(r.date).toBe("2026-11-10");
+    expect(r.datePrecision).toBe("exact");
+    expect(r.dateSource).toBe("text");
+    expect(r.dedupeKey).toBe("fr:2025-19826:2026-11-10");
+  });
+
+  // Each text has a preamble role date (2027-01-15, in window) that MUST NOT be emitted: only the
+  // marker splits it off into the preamble. Exactly one marker per text.
+  const cases: [string, string][] = [
+    ["proclaim as follows", "The investigation found that duties became effective January 15, 2027. NOW, THEREFORE, I, the President of the United States of America, do hereby proclaim as follows: (1) Effective on or after 12:01 a.m. eastern time on December 1, 2026, the tariff applies."],
+    ["hereby ordered", "The policy is effective January 15, 2027. By the authority vested in me as President, it is hereby ordered as follows: (a) Effective December 1, 2026, the measures apply."],
+    ["I hereby direct", "The report is effective January 15, 2027. By virtue of my office, I hereby direct the Secretary of Commerce to apply the duties effective December 1, 2026."],
+    ["Sec. 1.", "The framework is effective January 15, 2027. Sec. 1. Policy. Effective December 1, 2026, the restrictions apply."],
+    ["Section 1.", "The framework is effective January 15, 2027. Section 1. Policy. Effective December 1, 2026, the restrictions apply."],
+  ];
+  for (const [markerLabel, body] of cases) {
+    it(`marker "${markerLabel}" opens the operative part: exact 2026-12-01, preamble date ignored`, () => {
+      const d = presDoc(body);
+      expect(hasOperativeMarker(d)).toBe(true);
+      const rows = classify(d, WINDOW);
+      expect(rows).toHaveLength(1);
+      const r = rows[0]!;
+      expect(r.kind).toBe("presidential_action");
+      expect(r.date).toBe("2026-12-01");
+      expect(r.datePrecision).toBe("exact");
+      expect(r.dateSource).toBe("text");
+    });
+  }
+
+  it("presidential doc without any marker: hasOperativeMarker false and rows estimated", () => {
+    const d = presDoc("The duties shall apply 12:01 a.m. eastern time on November 9, 2026.");
+    expect(hasOperativeMarker(d)).toBe(false);
+    const rows = classify(d, WINDOW);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.date).toBe("2026-11-09");
+    expect(rows[0]!.datePrecision).toBe("estimated");
   });
 });
 

@@ -564,6 +564,35 @@ describe("federal register paging and PRESDOCU", () => {
     expect(s.purgeStaleCatalysts).toHaveBeenCalledTimes(4);
   });
 
+  it("PRESDOCU: raw text without an operative marker -> logged and reported, dates kept estimated", async () => {
+    const logs: string[] = [];
+    const fetchImpl = mockFetch({
+      PRESDOCU: {
+        results: [
+          {
+            title: "Adjusting Imports of Steel Into the United States Under Section 232",
+            type: "Presidential Document",
+            subtype: "Proclamation",
+            effective_on: null,
+            html_url: "https://www.federalregister.gov/d/2026-26301",
+            abstract: "",
+            document_number: "2026-26301",
+            raw_text_url: "https://www.federalregister.gov/documents/full_text/raw/2026-26301.txt",
+          },
+        ],
+        total_pages: 1,
+      },
+      rawText: "Adjusted imports of steel shall apply on or after 12:01 a.m. eastern time on December 4, 2026.",
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, horizonDays: 60, fetch: fetchImpl as unknown as typeof fetch, log: (m) => logs.push(m) });
+    const report = getLastFrSyncReport();
+    expect(report!.noOperativeMarker).toEqual(["2026-26301"]);
+    expect(logs.some((m) => m.includes("2026-26301") && m.includes("no presidential operative marker"))).toBe(true);
+    // classify behavior is unchanged: the text date still yields a row, just estimated-risky → still emitted.
+    expect(catalysts(s).map((r) => r.dateStart)).toEqual(["2026-12-04"]);
+  });
+
   it("PRESDOCU: raw-text fetch failing (500) -> no purge, report complete false", async () => {
     const fetchImpl = mockFetch(
       {

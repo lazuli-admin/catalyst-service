@@ -91,16 +91,41 @@ const ROLE_SUSPENSION_RE = new RegExp(String.raw`\b(?:stayed\s+until|suspended\s
 /** "12:01 a.m. … <date>", "effective [on] <date>", "on or after <date>", "in force <date>", "expires <date>" — effective that day. */
 const ROLE_EFFECTIVE_RE = new RegExp(String.raw`\b(?:12:01\s*a\.m\. [a-z ]{0,60}?(?:on\s+)?|effective(?:\s+on)?\s+(?:on\s+or\s+about\s+|approximately\s+)?|on\s+or\s+after\s+(?:on\s+or\s+about\s+|approximately\s+)?|in\s+force\s+(?:on\s+)?|expires?\s+)(${MONTH_FULL})\b`, "gi");
 
-/** Split a document into operative text (carries the role dates) vs preamble. Pure. */
-export function operativeText(doc: FrApiDoc): { operative: string; preamble: string } {
+/** Text markers that open the operative part of a presidential document (order, proclamation, section heading). */
+export const PRESIDENTIAL_OPERATIVE_MARKERS: RegExp[] = [
+  /proclaim\s+as\s+follows/i,
+  /(?:it\s+is\s+)?hereby\s+(?:determine\s+and\s+)?order(?:ed)?\b/i,
+  /\bI\s+hereby\s+direct\b/i,
+  /\bSec\.\s+1\./i,
+  /\bSection\s+1\./i,
+];
+
+/** Split a document into operative text (carries the role dates) vs preamble. Pure.
+ *  Presidential: the earliest operative marker splits bodyText; `marker` reports whether one was found.
+ *  Non-presidential: `dates` is the operative text and `marker` is always true. */
+export function operativeText(doc: FrApiDoc): { operative: string; preamble: string; marker: boolean } {
   const abstract = doc.abstract ?? "";
   if (doc.type === "Presidential Document") {
     const body = doc.bodyText ?? "";
-    const m = body.match(/proclaim\s+as\s+follows|hereby\s+ordered|\bSec\.\s+1\./i);
-    if (m) return { operative: body.slice(m.index), preamble: `${body.slice(0, m.index)} ${abstract}` };
-    return { operative: "", preamble: `${body} ${abstract}` };
+    let idx = -1;
+    for (const re of PRESIDENTIAL_OPERATIVE_MARKERS) {
+      const m = body.match(re);
+      if (m && m.index !== undefined && (idx === -1 || m.index < idx)) idx = m.index;
+    }
+    if (idx >= 0) return { operative: body.slice(idx), preamble: `${body.slice(0, idx)} ${abstract}`, marker: true };
+    return { operative: "", preamble: `${body} ${abstract}`, marker: false };
   }
-  return { operative: doc.dates ?? "", preamble: [abstract, doc.bodyText].filter((s): s is string => typeof s === "string").join(" ") };
+  return {
+    operative: doc.dates ?? "",
+    preamble: [abstract, doc.bodyText].filter((s): s is string => typeof s === "string").join(" "),
+    marker: true,
+  };
+}
+
+/** Does the document carry operative text at all? Presidential docs need a marker; others always do. */
+export function hasOperativeMarker(doc: FrApiDoc): boolean {
+  if (doc.type !== "Presidential Document") return true;
+  return operativeText(doc).marker;
 }
 
 /** Role-word dates ("effective X", "stayed until X", …) in prose. Pure. */

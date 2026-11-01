@@ -2,7 +2,7 @@
 import type { Store } from "../db.js";
 import { errorMessage } from "../util.js";
 import { isNoise, isRelevant, NOISE_PATTERNS, topicTags } from "../topics.js";
-import { classify, type FrApiDoc } from "./fr-classify.js";
+import { classify, hasOperativeMarker, type FrApiDoc } from "./fr-classify.js";
 import { curatedFrDocNumbers } from "./policy.js";
 
 const TIMEOUT_MS = 15_000;
@@ -40,7 +40,7 @@ function horizonEnd(today: string, horizonDays: number): string {
 
 export type FrDrop = { dedupeKey: string; title: string; reason: string };
 export type FrQueryReport = { name: string; pages: number; totalPages: number | null; docs: number; ok: boolean; error?: string };
-export type FrSyncReport = { at: string; complete: boolean; count: number; drops: FrDrop[]; skippedCurated: string[]; queries: FrQueryReport[] };
+export type FrSyncReport = { at: string; complete: boolean; count: number; drops: FrDrop[]; skippedCurated: string[]; noOperativeMarker: string[]; queries: FrQueryReport[] };
 let lastFrSyncReport: FrSyncReport | null = null;
 export function getLastFrSyncReport(): FrSyncReport | null {
   return lastFrSyncReport;
@@ -138,6 +138,7 @@ export async function syncFederalRegister(
 
   const queries: FrQueryReport[] = [];
   const skippedCurated = new Set<string>();
+  const noOperativeMarker = new Set<string>();
   for (const target of targets) {
     const q: FrQueryReport = { name: target.name, pages: 0, totalPages: null, docs: 0, ok: true };
     try {
@@ -193,6 +194,10 @@ export async function syncFederalRegister(
             const rawUrl = typeof row.raw_text_url === "string" ? row.raw_text_url : null;
             if (!rawUrl) throw new Error("missing raw_text_url");
             doc.bodyText = await (await fetchResponse(rawUrl)).text();
+            if (!hasOperativeMarker(doc)) {
+              log(`federal register WARNING ${documentNumber}: no presidential operative marker; dates kept estimated`);
+              noOperativeMarker.add(documentNumber);
+            }
           }
           const events = classify(doc, { today: opts.today, end });
           if (events.length === 0) {
@@ -255,10 +260,10 @@ export async function syncFederalRegister(
         drops.push({ dedupeKey: row.dedupeKey, title: row.title, reason });
       }
     }
-    lastFrSyncReport = { at: new Date().toISOString(), complete: true, count: drops.length, drops, skippedCurated: [...skippedCurated].sort(), queries };
+    lastFrSyncReport = { at: new Date().toISOString(), complete: true, count: drops.length, drops, skippedCurated: [...skippedCurated].sort(), noOperativeMarker: [...noOperativeMarker].sort(), queries };
     for (const kind of FR_KINDS) await store.purgeStaleCatalysts(kind, opts.today, runStart, "fr:");
   } else {
-    lastFrSyncReport = { at: new Date().toISOString(), complete: false, count: 0, drops: [], skippedCurated: [...skippedCurated].sort(), queries };
+    lastFrSyncReport = { at: new Date().toISOString(), complete: false, count: 0, drops: [], skippedCurated: [...skippedCurated].sort(), noOperativeMarker: [...noOperativeMarker].sort(), queries };
   }
 }
 
