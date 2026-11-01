@@ -242,11 +242,19 @@ describe("other noise patterns", () => {
     const keep = "Senior Executive Service: Performance Appraisal Review Board";
     expect(isNoise({ title: keep })).toBe(false);
   });
+
+  it("drops FTA textile short-supply / commercial-availability notices, keeps USMCA automotive reports", () => {
+    expect(isNoise({ title: "Determination Under the Textile and Apparel Commercial Availability Provision of the Dominican Republic-Central America-United States Free Trade Agreement" })).toBe(true);
+    expect(isNoise({ title: "Additions to the Short Supply List Under the CAFTA-DR" })).toBe(true);
+    const keep = "USMCA Automotive Rules of Origin: Economic Impact and Operation, 2027 Report";
+    expect(isNoise({ title: keep })).toBe(false);
+    expect(isRelevant({ title: keep })).toBe(true);
+  });
 });
 
 describe("noise pattern coverage", () => {
   it("covers every NOISE_PATTERNS entry (add a test when adding a pattern)", () => {
-    expect(NOISE_PATTERNS.length).toBe(13);
+    expect(NOISE_PATTERNS.length).toBe(14);
   });
 
   it("AD_CVD_RE is the first noise pattern (Section 232 override depends on identity)", () => {

@@ -52,6 +52,14 @@ describe("syncPolicyEvents", () => {
     await expect(syncPolicyEvents(s, { today: "2026-11-01", horizonDays: 10, file: "test/../package.json", log: () => {} })).resolves.toBeUndefined();
   });
 
+  it("maps the event date to dateStart for the s301 exclusions end", async () => {
+    const s = store();
+    await syncPolicyEvents(s, { today: "2026-11-01", horizonDays: 200, file: "data/policy-events.json" });
+    const rows = s.upsertCatalyst.mock.calls.map(([c]) => c as Catalyst);
+    const row = rows.find((r) => r.dedupeKey === "policy:s301-china-exclusions-end")!;
+    expect(row.dateStart).toBe("2026-11-10");
+  });
+
   it("persists precision/impact from the file", async () => {
     const s = store();
     await syncPolicyEvents(s, { today: "2026-11-01", horizonDays: 200, file: "data/policy-events.json" });
