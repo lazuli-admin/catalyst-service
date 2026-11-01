@@ -16,6 +16,9 @@ export const FR_AGENCIES: Record<string, { label: string }> = {
   "securities-and-exchange-commission": { label: "SEC" },
 };
 
+/** Agencies whose sync query also includes NOTICE documents (used by recall gate too). */
+export const NOTICE_AGENCY_LABELS = ["USTR", "ITA", "CBP"];
+
 /** Fixed-date political events. */
 export const ELECTIONS: { date: string; title: string }[] = [
   { date: "2026-11-03", title: "US midterm elections" },
@@ -78,7 +81,7 @@ export async function syncFederalRegister(
   for (const [slug, agency] of Object.entries(FR_AGENCIES)) {
     try {
       // RULE/PRORULE for everyone; trade agencies also surface proposed-notice documents (NOTICE).
-      const typeParams = ["RULE", "PRORULE", ...(agency.label === "USTR" || agency.label === "ITA" || agency.label === "CBP" ? ["NOTICE"] : [])]
+      const typeParams = ["RULE", "PRORULE", ...(NOTICE_AGENCY_LABELS.includes(agency.label) ? ["NOTICE"] : [])]
         .map((t) => `conditions[type][]=${t}`).join("&");
       const url =
         `https://www.federalregister.gov/api/v1/documents.json?conditions[agencies][]=${encodeURIComponent(slug)}` +
