@@ -227,7 +227,8 @@ export const NOISE_PATTERNS: RegExp[] = [
   AD_CVD_RE,
   /information collection|submission (to|for) (the )?OMB|paperwork reduction/i,
   /^sunshine act/i,
-  /^self-regulatory organizations/i,
+  // SRO noise only: routine procedural/admin filings (fees, timing, technical/clarifying/conforming tweaks), not substantive rule filings.
+  /^self-regulatory organizations\b.*(\bfees?\b|fee schedule|pricing|designation of a longer period|extension of (the )?time|technical (changes?|amendments?)|clarif(y|ying|ication)|conforming (changes?|amendments?))/i,
   /petition for rulemaking|petition for reconsideration/i,
   /commercial gauger|commercial laborator/i,
   /list of rules to be reviewed/i,

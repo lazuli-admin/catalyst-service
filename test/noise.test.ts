@@ -175,8 +175,26 @@ describe("other noise patterns", () => {
   });
 
   it("drops self-regulatory organization notices only when anchored at the start", () => {
-    expect(isNoise({ title: "Self-Regulatory Organizations; NYSE American, Inc.; Notice of Filing of a Proposed Rule Change" })).toBe(true);
-    expect(isNoise({ title: "Notice of a Proposed Rule Change by a Self-Regulatory Organization" })).toBe(false);
+    const drops = [
+      "Self-Regulatory Organizations; Example Exchange LLC; Notice of Filing and Immediate Effectiveness of a Proposed Rule Change To Amend the Fee Schedule",
+      "Self-Regulatory Organizations; Example Exchange LLC; Notice of Filing of a Proposed Rule Change To Amend Pricing for Market Data",
+      "Self-Regulatory Organizations; Example Clearing LLC; Notice of Designation of a Longer Period for Commission Action on a Proposed Rule Change",
+      "Self-Regulatory Organizations; Example Exchange; Order Granting Extension of Time",
+      "Self-Regulatory Organizations; Example Exchange; Notice of Filing of a Proposed Rule Change To Make Technical Changes to Rule 1.1",
+      "Self-Regulatory Organizations; Example Exchange; Notice of Filing of Proposed Rule Change To Clarify Rule Text",
+      "Self-Regulatory Organizations; Example Exchange; Notice of Filing of a Proposed Rule Change To Make Conforming Changes",
+    ];
+    for (const title of drops) {
+      expect(isNoise({ title })).toBe(true);
+    }
+    const keeps = [
+      "Self-Regulatory Organizations; Example Exchange LLC; Notice of Filing of a Proposed Rule Change To List and Trade Shares of a Bitcoin Trust",
+      "Fee Schedule Notice for Port Operators",
+      "Self-Regulatory Organizations; Example Exchange; Notice of Filing To List Options on Coffee Futures",
+    ];
+    for (const title of keeps) {
+      expect(isNoise({ title })).toBe(false);
+    }
   });
 
   it("drops petitions for rulemaking / reconsideration, keeps other petitions", () => {
