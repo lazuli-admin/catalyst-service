@@ -179,6 +179,7 @@ describe("other noise patterns", () => {
       "Self-Regulatory Organizations; Example Exchange LLC; Notice of Filing and Immediate Effectiveness of a Proposed Rule Change To Amend the Fee Schedule",
       "Self-Regulatory Organizations; Example Exchange LLC; Notice of Filing of a Proposed Rule Change To Amend Pricing for Market Data",
       "Self-Regulatory Organizations; Example Clearing LLC; Notice of Designation of a Longer Period for Commission Action on a Proposed Rule Change",
+      "Self-Regulatory Organizations; Example Clearing Inc.; Notice of Designation of Longer Period for Commission Action on Proposed Rule Change",
       "Self-Regulatory Organizations; Example Exchange; Order Granting Extension of Time",
       "Self-Regulatory Organizations; Example Exchange; Notice of Filing of a Proposed Rule Change To Make Technical Changes to Rule 1.1",
       "Self-Regulatory Organizations; Example Exchange; Notice of Filing of Proposed Rule Change To Clarify Rule Text",
