@@ -17,7 +17,6 @@ const cat = (overrides: Partial<Catalyst> = {}): Catalyst => ({
   themes: [],
   affectedTickers: [],
   sourceUrl: null,
-  impactWeight: null,
   observationId: null,
   dedupeKey: "k",
   createdAt: "2026-11-01",

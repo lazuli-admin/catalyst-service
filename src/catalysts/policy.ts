@@ -16,7 +16,6 @@ interface PolicyEvent {
   precision: Catalyst["datePrecision"];
   title: string;
   kind: Catalyst["kind"];
-  impactWeight: number;
   sourceUrl: string;
   themes: string[];
   affectedTickers: string[];
@@ -52,7 +51,6 @@ export async function syncPolicyEvents(
         sourceUrl: e.sourceUrl,
         observationId: null,
         dedupeKey,
-        impactWeight: e.impactWeight,
       });
     }
     await store.purgeByKeyPrefixExcept("policy:", keepKeys);

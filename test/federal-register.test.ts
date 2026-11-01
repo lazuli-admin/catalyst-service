@@ -118,7 +118,6 @@ describe("syncFederalRegister", () => {
       kind: "regulatory_decision",
       dateStart: "2026-11-09",
       dateEnd: "2026-11-09",
-      impactWeight: 1,
       dedupeKey: "fr:fcc-prop-1:comments:2026-11-09",
     });
     expect(rows[0]!.title).toContain("(replies Dec 7)");

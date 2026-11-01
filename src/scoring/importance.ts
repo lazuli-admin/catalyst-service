@@ -3,7 +3,7 @@
 //   score = importance(class) x certainty x confidence
 //
 // The IMPORTANCE table below is the single source of truth for per-class weights;
-// no kind-tier table, pinned list, or impactWeight override participates anymore.
+// no kind-tier table, pinned list or per-row weight override participates anymore.
 // Focus boost: earnings of watchlist names are boosted x1.5 (FOCUS_MULTIPLIER), applied in
 // catalysts/ranked.ts after scoreEvent — not part of the table or the functions here.
 // Default view: only catalysts scoring >= DEFAULT_VIEW_MIN_SCORE (4.0) are shown.
@@ -82,8 +82,8 @@ export function macroSeries(c: Pick<Catalyst, "dedupeKey" | "title">): EventClas
   if (c.dedupeKey.startsWith("bea:GDP:")) return "gdp";
   // Fallback for macro rows from other sources (LLM/calendar): classify by title.
   const t = c.title;
-  if (/\b(ecb|european central bank|boj|bank of japan|boe|bank of england|boc|bank of canada|snb|swiss national bank|rba|reserve bank of australia|rbnz|pboc|people's bank of china|riksbank|norges bank)\b/i.test(t)) return "central_bank_other";
-  if (/\bfomc\b|federal reserve|\bfed\b/i.test(t)) return "fomc";
+  if (/\b(ecb|european central bank|bank of japan|bank of england|bank of canada|swiss national bank|reserve bank of australia|reserve bank of new zealand|people's bank of china|riksbank|norges bank)\b|\b(boj|boe|boc|snb|rba|rbnz|pboc)\b.*\b(rate|policy|monetary)\b/i.test(t)) return "central_bank_other";
+  if (/\bfomc\b|\b(fed|federal reserve)\b.*\b(rate|policy) decision/i.test(t)) return "fomc";
   if (/\bcpi\b|consumer price/i.test(t)) return "cpi";
   if (/nonfarm|payrolls|jobs report|employment situation/i.test(t)) return "nfp";
   if (/\bpce\b|personal (income|consumption)/i.test(t)) return "pce";
@@ -176,3 +176,24 @@ export function scoreEvent(c: Catalyst, ctx: ScoreContext = {}): number {
 
 /** Minimum score for a catalyst to appear in the default (non-all) view; inclusive (PPI/JOLTS at exactly 4 stay in). */
 export const DEFAULT_VIEW_MIN_SCORE = 4.0;
+
+/**
+ * Macro series always shown in the default view regardless of score.
+ * NOT jobless_claims: a weekly release of importance 2, it would flood the view.
+ */
+export const ALWAYS_SHOWN_MACRO: ReadonlySet<EventClass> = new Set([
+  "fomc",
+  "cpi",
+  "nfp",
+  "pce",
+  "gdp",
+  "ppi",
+  "jolts",
+  "retail_sales",
+  "central_bank_other",
+]);
+
+/** True for macro catalysts whose series is always shown in the default view. */
+export function isAlwaysShown(c: Catalyst): boolean {
+  return c.kind === "macro" && ALWAYS_SHOWN_MACRO.has(classifyEvent(c));
+}

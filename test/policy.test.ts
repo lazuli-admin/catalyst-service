@@ -58,7 +58,6 @@ describe("syncPolicyEvents", () => {
     const rows = s.upsertCatalyst.mock.calls.map(([c]) => c as Catalyst);
     const estimated = rows.find((r) => r.dedupeKey === "policy:s232-robotics-update-due")!;
     expect(estimated.datePrecision).toBe("estimated");
-    expect(estimated.impactWeight).toBe(2);
     expect(estimated.kind).toBe("regulatory_decision");
   });
 });

@@ -204,4 +204,30 @@ describe("host key requirement and lock integration", () => {
     expect(typeof body.locks["source-poll"]!.lastDurationMs).toBe("number");
     await app.close();
   });
+
+  it("/health shows lastError for a failed source run and lastOk for a successful one", async () => {
+    const store = await memoryStore();
+    const lock = createSyncLock();
+    const app = buildServer(store, deps(store), { lock }); // fakeFetch({}) -> 404 for any url
+    await app.ready();
+    const headers = { "x-api-key": process.env.CATALYST_API_KEY ?? KEY };
+    const json = await store.createSource({ type: "json", name: "failing", config: { url: "https://x.test/api", fields: { title: "title" } } });
+    const res = await app.inject({ method: "POST", url: `/sources/${json.id}/run`, headers });
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as { error: string }).error).toBeTruthy();
+    const afterFail = (await app.inject({ method: "GET", url: "/health" })).json() as {
+      locks: Record<string, { lastError: string | null; lastOk: string | null }>;
+    };
+    expect(afterFail.locks["source-poll"]!.lastError).toBeTruthy();
+    expect(afterFail.locks["source-poll"]!.lastOk).toBeNull();
+
+    const push = await store.createSource({ type: "push", name: "succeeding", config: {} });
+    await app.inject({ method: "POST", url: `/sources/${push.id}/run`, headers });
+    const afterOk = (await app.inject({ method: "GET", url: "/health" })).json() as {
+      locks: Record<string, { lastError: string | null; lastOk: string | null }>;
+    };
+    expect(afterOk.locks["source-poll"]!.lastOk).toEqual(expect.any(String));
+    expect(afterOk.locks["source-poll"]!.lastError).toBeNull();
+    await app.close();
+  });
 });

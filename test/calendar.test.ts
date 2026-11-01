@@ -26,7 +26,7 @@ const cat = (overrides: Partial<CatalystInput>): CatalystInput => ({
   dedupeKey: overrides.title ?? "k",
   ...overrides,
 });
-const full = (c: CatalystInput): Catalyst => ({ ...c, id: c.dedupeKey, datePrecision: c.datePrecision ?? "exact", impactWeight: null, createdAt: c.dateStart, updatedAt: c.dateStart }) as Catalyst;
+const full = (c: CatalystInput): Catalyst => ({ ...c, id: c.dedupeKey, datePrecision: c.datePrecision ?? "exact", createdAt: c.dateStart, updatedAt: c.dateStart }) as Catalyst;
 
 beforeAll(async () => {
   process.env.CATALYST_API_KEY = KEY;

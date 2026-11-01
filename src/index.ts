@@ -101,7 +101,7 @@ async function main(): Promise<void> {
         const counts = await prospect();
         deps.log?.(`prospect: ${counts.items} items from ${counts.queries} queries, ${counts.stored} catalysts`);
       }
-      await lock.run("source-poll", () => runDueSources(deps, config.pollIntervalSeconds));
+      await lock.run("source-poll", () => runDueSources(deps, config.pollIntervalSeconds), (rs) => { const bad = rs.filter((r) => r.error); return bad.length ? bad.map((r) => `${r.sourceId}: ${r.error}`).join("; ") : null; });
       if (config.digestTime && config.barkUrl) {
         await maybeSendDigest(
           { store, barkUrl: config.barkUrl, market: true, log: deps.log },

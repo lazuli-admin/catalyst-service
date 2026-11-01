@@ -20,7 +20,6 @@ function cat(overrides: Partial<Catalyst> = {}): Catalyst {
     themes: [],
     affectedTickers: [],
     sourceUrl: null,
-    impactWeight: null,
     observationId: null,
     dedupeKey: "k",
     createdAt: TODAY,
@@ -85,7 +84,7 @@ describe("rankCatalysts", () => {
     expect(rows.every((r) => !("pinned" in r))).toBe(true);
   });
 
-  it("macro rows score by event class (no pin boost, no impactWeight override); off-watchlist earnings at class weight", () => {
+  it("macro rows score by event class (no pin boost or per-row weight override); off-watchlist earnings at class weight", () => {
     const rows = rankCatalysts(
       [
         cat({ ticker: null, kind: "macro", title: "US CPI: October inflation print", dateStart: "2026-03-25" }),
@@ -179,11 +178,11 @@ describe("rankCatalysts", () => {
 });
 
 describe("policy scoring", () => {
-  it("policy:* regulatory_decision rows score 6 (policy_decision) regardless of impactWeight; FR comment-close rows score 2 and rank below", () => {
+  it("policy:* regulatory_decision rows score 6 (policy_decision) regardless of dedupe key; FR comment-close rows score 2 and rank below", () => {
     const rows = rankCatalysts(
       [
-        cat({ id: "p", ticker: null, kind: "regulatory_decision", dedupeKey: "policy:foo", impactWeight: 3 }),
-        cat({ id: "m", ticker: null, kind: "regulatory_decision", dedupeKey: "policy:bar", impactWeight: 2 }),
+        cat({ id: "p", ticker: null, kind: "regulatory_decision", dedupeKey: "policy:foo" }),
+        cat({ id: "m", ticker: null, kind: "regulatory_decision", dedupeKey: "policy:bar" }),
         cat({ id: "fr", ticker: null, kind: "regulatory_decision", dedupeKey: "fr:2026-1:comments:2026-03-20", title: "Comments close on the draft rule" }),
       ],
       { asOf: TODAY, watchlist: [], all: true },
@@ -194,9 +193,9 @@ describe("policy scoring", () => {
     expect(rows[2]!.score).toBeCloseTo(2); // policy_comment_close
   });
 
-  it("impactWeight is ignored: earnings score their class (4) and CPI macro (8) ranks first", () => {
-    const earnings = cat({ id: "e", kind: "earnings", impactWeight: 3, title: "Smolco earnings (Q1)", dateStart: "2026-03-20", dateEnd: "2026-03-20" });
-    const macro = cat({ id: "x", ticker: null, kind: "macro", dedupeKey: "bls:CPI:2026-03-20", impactWeight: 3, title: "US CPI release", dateStart: "2026-03-20", dateEnd: "2026-03-20" });
+  it("per-row weight overrides are ignored: earnings score their class (4) and CPI macro (8) ranks first", () => {
+    const earnings = cat({ id: "e", kind: "earnings", title: "Smolco earnings (Q1)", dateStart: "2026-03-20", dateEnd: "2026-03-20" });
+    const macro = cat({ id: "x", ticker: null, kind: "macro", dedupeKey: "bls:CPI:2026-03-20", title: "US CPI release", dateStart: "2026-03-20", dateEnd: "2026-03-20" });
     const rows = rankCatalysts([earnings, macro], { asOf: TODAY, watchlist: [] });
     expect(rows.map((r) => r.id)).toEqual(["x", "e"]);
     expect(rows[0]!.score).toBeCloseTo(8); // cpi
