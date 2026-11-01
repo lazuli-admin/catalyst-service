@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { classify, hasOperativeMarker, operativeText, parseTextDates, roleDates, type FrApiDoc } from "../src/catalysts/fr-classify.js";
+import { abstractEffectStatements, classify, hasOperativeMarker, operativeText, parseTextDates, roleDates, type FrApiDoc } from "../src/catalysts/fr-classify.js";
 
 const WINDOW = { today: "2026-11-01", end: "2027-05-01" };
 
@@ -363,7 +363,7 @@ describe("fr-classify synthetic", () => {
   it('bareUntil corroboration pool: narrative abstract excluded, effect statements counted, bodyText never', () => {
     const dates = "The rule remains in effect until December 15, 2026.";
     // (a) abstract retells prior history → no corroboration → estimated
-    const a = classify(base({ dates, abstract: "A prior order previously set the stay to end on December 15, 2026." }), WINDOW);
+    const a = classify(base({ dates, abstract: "A prior order previously provided that the rule remains in effect through December 15, 2026." }), WINDOW);
     expect(a).toHaveLength(1);
     expect(a[0]!.kind).toBe("rule_expiry");
     expect(a[0]!.date).toBe("2026-12-16");
@@ -378,6 +378,12 @@ describe("fr-classify synthetic", () => {
     expect(c).toHaveLength(1);
     expect(c[0]!.date).toBe("2026-12-16");
     expect(c[0]!.datePrecision).toBe("estimated");
+  });
+
+  it('abstractEffectStatements: "prior order" narrative is stripped, "This rule is effective" is kept', () => {
+    const statements = abstractEffectStatements("A prior order previously provided X. This rule is effective through December 15, 2026.");
+    expect(statements).not.toContain("prior order");
+    expect(statements).toContain("This rule is effective");
   });
 
   it('bare "remains until" corroborated by a same-date effective clause → exact expiry', () => {
