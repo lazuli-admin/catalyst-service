@@ -467,4 +467,19 @@ describe("fr-classify date precision", () => {
     const rows = classify({ ...pd("2025-19846"), document_number: "T6", type: "Rule", dates: "Comments must be submitted through December 1, 2026.", effective_on: null, abstract: null }, WINDOW);
     expect(rows.filter((r) => r.kind === "rule_effective")).toEqual([]);
   });
+
+  it("fr-classify date precision: preamble dates are ignored when the operative text has any role date", () => {
+    const rows = classify({
+      ...pd("2025-19846"),
+      document_number: "T7",
+      type: "Rule",
+      title: "Measures To Restrict Stockpiling of Example Products",
+      dates: "This rule is effective September 22, 2026, through December 3, 2026.",
+      abstract: "The President's import adjustments will be effective on December 4, 2026.",
+      effective_on: "2026-09-22",
+      comments_close_on: null,
+      bodyText: null,
+    }, WINDOW);
+    expect(rows).toEqual([]);
+  });
 });

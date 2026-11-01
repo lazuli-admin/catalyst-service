@@ -647,7 +647,7 @@ describe("curated FR doc number skipping", () => {
   it("skips a curated doc: no upsert, skippedCurated reported, pre-existing fr row purged as curated duplicate", async () => {
     const fetchImpl = mockFetch({ PRESDOCU: { results: [polysiliconDoc], total_pages: 1 }, rawText: proclamationText });
     const s = store();
-    s.listStaleCatalysts.mockImplementation(async (kind: string) =>
+    s.listStaleCatalysts.mockImplementation(async (kind: unknown) =>
       kind === "presidential_action"
         ? [{ dedupeKey: "fr:2026-16400:2026-12-04", title: "Proclamation in effect Dec 4: Adjusting Imports of Polysilicon" }]
         : [],

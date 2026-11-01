@@ -143,10 +143,12 @@ export function classify(doc: FrApiDoc, window: { today: string; end: string }):
   };
 
   const { operative, preamble } = operativeText(doc);
-  const opCands = roleDates(operative).filter((p) => inWindow(p.date));
+  const opAll = roleDates(operative);
+  const opCands = opAll.filter((p) => inWindow(p.date));
   const preCands = roleDates(preamble).filter((p) => inWindow(p.date));
-  // Operative dates win: preamble dates are only used when the operative text yields none.
-  const cands = opCands.length > 0 ? opCands : preCands;
+  // Operative dates win: preamble dates are only used when the operative text has NO role dates at all
+  // (in or out of window) — otherwise quoting another document's date in the abstract would leak a row.
+  const cands = opAll.length > 0 ? opCands : preCands;
 
   if (doc.type === "Presidential Document") {
     // Presidential: "in effect" dates come from role-word clauses in the text, not the API.
