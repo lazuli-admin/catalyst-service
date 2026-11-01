@@ -1,6 +1,7 @@
 // Pure classifier for Federal Register documents: ports the date/kind logic from federal-register.ts
-// (API effective dates, proposed-rule comment deadlines, abstract suspension ends, presidential
-// "in effect" text clauses). No I/O, no clock — all date math is UTC arithmetic on given strings.
+// (API effective dates, proposed-rule comment deadlines, and role-word text clauses — operative
+// text preferred, preamble fallback — covering suspension ends and presidential "in effect" dates).
+// No I/O, no clock — all date math is UTC arithmetic on given strings.
 
 export type FrDocType = "Rule" | "Proposed Rule" | "Notice" | "Presidential Document";
 
@@ -34,12 +35,6 @@ export interface CandidateEvent {
 
 const MONTHS =
   "Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?";
-/** "end(s)/expire(s)/until/through/terminate(s) <Month D, YYYY>" in rule abstracts. */
-const END_DATE_RE = new RegExp(
-  String.raw`\b(?:end|ends|expire|expires|until|through|terminate|terminates)\s+((?:${MONTHS})\s+\d{1,2},\s*\d{4})\b`,
-  "i",
-);
-
 const MONTH_DATE = `((?:${MONTHS})\\s+\\d{1,2},\\s*\\d{4})`;
 /** "12:01 a.m. eastern [daylight] time on <Month D, YYYY>" — change takes effect that day. */
 const MIDNIGHT_RE = new RegExp(String.raw`\b12:01\s*a\.m\. ([a-z ]{0,60}?)(?:on )?${MONTH_DATE}`, "i");
@@ -66,6 +61,7 @@ export interface TextDate {
   date: string;
   role: DateRole;
   raw: string;
+  vague?: boolean;
 }
 
 /** Time-clause dates ("12:01 a.m. … on <date>", "through 11:59 p.m. … <date>") in prose text.
@@ -84,6 +80,58 @@ export function parseTextDates(text: string): TextDate[] {
   return out;
 }
 
+/** Full "Month D, YYYY" date (month-only dates never match a role). */
+const MONTH_FULL = `(?:${MONTHS})\\s+\\d{1,2},\\s*\\d{4}`;
+const MONTH_FULL_RE = new RegExp(MONTH_FULL, "g");
+/** "through/until 11:59 p.m. <date>" — in effect the NEXT day. */
+const ROLE_END_OF_DAY_RE = new RegExp(String.raw`\b(?:through|until)\s+11:59\s*p\.m\. [a-z ]{0,60}?(?:on\s+)?(${MONTH_FULL})\b`, "gi");
+/** "stayed until <date>", "suspended … until|through <date>" (no clock time), or "the suspension
+ *  (is/will be) (set to) end(s)/expire(s)/terminate(s) <date>" — the stay covers the date, back in force the NEXT day. */
+const ROLE_SUSPENSION_RE = new RegExp(String.raw`\b(?:stayed\s+until|suspended\s+.{0,120}?\b(?:until|through)|suspension\s+(?:is\s+|will\s+)?(?:set\s+to\s+)?(?:ends?|expires?|terminates?))\s+(?!\d{1,2}:\d{2})(${MONTH_FULL})\b`, "gi");
+/** "12:01 a.m. … <date>", "effective [on] <date>", "on or after <date>", "in force <date>", "expires <date>" — effective that day. */
+const ROLE_EFFECTIVE_RE = new RegExp(String.raw`\b(?:12:01\s*a\.m\. [a-z ]{0,60}?(?:on\s+)?|effective(?:\s+on)?\s+(?:on\s+or\s+about\s+|approximately\s+)?|on\s+or\s+after\s+(?:on\s+or\s+about\s+|approximately\s+)?|in\s+force\s+(?:on\s+)?|expires?\s+)(${MONTH_FULL})\b`, "gi");
+
+/** Split a document into operative text (carries the role dates) vs preamble. Pure. */
+export function operativeText(doc: FrApiDoc): { operative: string; preamble: string } {
+  const abstract = doc.abstract ?? "";
+  if (doc.type === "Presidential Document") {
+    const body = doc.bodyText ?? "";
+    const m = body.match(/proclaim\s+as\s+follows|hereby\s+ordered|\bSec\.\s+1\./i);
+    if (m) return { operative: body.slice(m.index), preamble: `${body.slice(0, m.index)} ${abstract}` };
+    return { operative: "", preamble: `${body} ${abstract}` };
+  }
+  return { operative: doc.dates ?? "", preamble: [abstract, doc.bodyText].filter((s): s is string => typeof s === "string").join(" ") };
+}
+
+/** Role-word dates ("effective X", "stayed until X", …) in prose. Pure. */
+export function roleDates(text: string): TextDate[] {
+  const norm = text.replace(/\s+/g, " ");
+  const out: TextDate[] = [];
+  // a.m./p.m. excluded so time clauses aren't split mid-sentence.
+  for (const sentence of norm.split(/(?<!\b[ap]\.m\.)(?<!\bSec\.)(?<!\bU\.S\.)(?<!\bNo\.)(?<=[.;])\s+/)) {
+    if (/\bcomments?\b/i.test(sentence)) continue; // comment deadlines are not the doc's own effective role
+    const vagueSentence = /within\s+\d+\s+days|\d+\s+days\s+(?:from|after)/i.test(sentence);
+    const push = (m: RegExpMatchArray, role: DateRole, date: string): void => {
+      const idx = m.index! + m[0].indexOf(m[1]!);
+      const vague = vagueSentence || /on\s+or\s+about|approximately/i.test(sentence.slice(Math.max(0, idx - 60), idx));
+      out.push({ date, role, raw: m[0], ...(vague ? { vague: true } : {}) });
+    };
+    for (const m of sentence.matchAll(ROLE_END_OF_DAY_RE)) {
+      const base = toIso(m[1]!);
+      if (base) push(m, "effective", nextDay(base));
+    }
+    for (const m of sentence.matchAll(ROLE_SUSPENSION_RE)) {
+      const base = toIso(m[1]!);
+      if (base) push(m, "suspension_end", nextDay(base));
+    }
+    for (const m of sentence.matchAll(ROLE_EFFECTIVE_RE)) {
+      const date = toIso(m[1]!);
+      if (date) push(m, "effective", date);
+    }
+  }
+  return out;
+}
+
 /** Classify one FR document into in-window candidate events. Pure. */
 export function classify(doc: FrApiDoc, window: { today: string; end: string }): CandidateEvent[] {
   if (/^C\d-/.test(doc.document_number)) return [];
@@ -94,26 +142,31 @@ export function classify(doc: FrApiDoc, window: { today: string; end: string }):
     rows.push({ ...r, sourceUrl: doc.html_url ?? null });
   };
 
+  const { operative, preamble } = operativeText(doc);
+  const opAll = roleDates(operative);
+  const opCands = opAll.filter((p) => inWindow(p.date));
+  const preCands = roleDates(preamble).filter((p) => inWindow(p.date));
+  // Operative dates win: preamble dates are only used when the operative text has NO role dates at all
+  // (in or out of window) — otherwise quoting another document's date in the abstract would leak a row.
+  const cands = opAll.length > 0 ? opCands : preCands;
+
   if (doc.type === "Presidential Document") {
-    // Presidential: "in effect" dates come from time clauses in the text, not the API.
-    const text = [doc.bodyText, doc.dates, doc.abstract].filter((s): s is string => typeof s === "string").join(" ");
-    const seen = new Set<string>();
-    for (const p of parseTextDates(text)) {
-      if (!inWindow(p.date) || seen.has(p.date)) continue;
-      seen.add(p.date);
-      const subtypeLabel = doc.subtype || "Presidential document";
+    // Presidential: "in effect" dates come from role-word clauses in the text, not the API.
+    const subtypeLabel = doc.subtype || "Presidential document";
+    const exact = opCands.length > 0 && new Set(cands.map((p) => p.date)).size === 1 && !cands.some((p) => p.vague);
+    for (const date of new Set(cands.map((p) => p.date))) {
       add({
-        dedupeKey: `fr:${doc.document_number}:${p.date}`,
-        title: `${subtypeLabel} in effect ${fmtDate(p.date)}: ${doc.title}`,
+        dedupeKey: `fr:${doc.document_number}:${date}`,
+        title: `${subtypeLabel} in effect ${fmtDate(date)}: ${doc.title}`,
         kind: "presidential_action",
         role: "effective",
-        date: p.date,
-        datePrecision: "estimated",
+        date,
+        datePrecision: exact ? "exact" : "estimated",
         dateSource: "text",
       });
     }
   } else {
-    // Effective-date candidates keep the plain title; abstract end dates shift to the NEXT day (rule back in force).
+    // Effective-date candidates keep the plain title; API rows are emitted before text rows so the dedupe keeps them.
     if (doc.type !== "Proposed Rule" && typeof doc.effective_on === "string" && /^\d{4}-\d{2}-\d{2}$/.test(doc.effective_on) && inWindow(doc.effective_on)) {
       add({
         dedupeKey: `fr:${doc.document_number}:${doc.effective_on}`,
@@ -124,26 +177,6 @@ export function classify(doc: FrApiDoc, window: { today: string; end: string }):
         datePrecision: "exact",
         dateSource: "api",
       });
-    }
-    // Suspension end and in-force/expiry text clauses only apply to Rule/Notice: proposed rules never emit rule_effective.
-    const abstract = typeof doc.abstract === "string" ? doc.abstract : "";
-    if (doc.type !== "Proposed Rule" && /suspen|pause/i.test(abstract) && !/^(request for comments|applications for)/i.test(doc.title)) {
-      const m = END_DATE_RE.exec(abstract);
-      const endIso = m ? toIso(m[1]!) : null;
-      if (endIso) {
-        const next = nextDay(endIso);
-        if (inWindow(next)) {
-          add({
-            dedupeKey: `fr:${doc.document_number}:${next}`,
-            title: `${/affiliat|end-user/i.test(doc.title) ? `${label} affiliates rule` : `${label}: rule`} back in force ${fmtDate(next)} (suspension ends ${fmtDate(endIso)}) — ${doc.title}`,
-            kind: "rule_effective",
-            role: "suspension_end",
-            date: next,
-            datePrecision: "estimated",
-            dateSource: "text",
-          });
-        }
-      }
     }
     const commentsOn =
       typeof doc.comments_close_on === "string" && /^\d{4}-\d{2}-\d{2}$/.test(doc.comments_close_on) ? doc.comments_close_on : null;
@@ -174,18 +207,24 @@ export function classify(doc: FrApiDoc, window: { today: string; end: string }):
         dateSource: "api",
       });
     }
-    // Time-clause text dates ("12:01 a.m.", "through 11:59 p.m. → next day") from the doc text.
-    if (doc.type !== "Proposed Rule") {
-      const text = [doc.dates, doc.abstract, doc.bodyText].filter((s): s is string => typeof s === "string").join(" ");
-      for (const p of parseTextDates(text)) {
-        if (!inWindow(p.date)) continue;
+    // Role-word text dates ("effective X", "suspension ends X → next day", time clauses) —
+    // proposed rules never emit rule_effective. One row per distinct date.
+    if (doc.type !== "Proposed Rule" && cands.length > 0) {
+      const distinct = [...new Set(cands.map((p) => p.date))];
+      const exact = opCands.length > 0 && distinct.length === 1 && !cands.some((p) => p.vague);
+      for (const date of distinct) {
+        const susp = cands.find((p) => p.date === date && p.role === "suspension_end");
+        if (susp && /^(request for comments|applications for)/i.test(doc.title)) continue;
+        const endIso = susp ? toIso([...susp.raw.matchAll(MONTH_FULL_RE)].pop()![0]!) : null;
         add({
-          dedupeKey: `fr:${doc.document_number}:${p.date}`,
-          title: doc.title,
+          dedupeKey: `fr:${doc.document_number}:${date}`,
+          title: susp
+            ? `${/affiliat|end-user/i.test(doc.title) ? `${label} affiliates rule` : `${label}: rule`} back in force ${fmtDate(date)} (suspension ends ${fmtDate(endIso!)}) — ${doc.title}`
+            : doc.title,
           kind: "rule_effective",
-          role: p.role,
-          date: p.date,
-          datePrecision: "estimated",
+          role: susp ? "suspension_end" : "effective",
+          date,
+          datePrecision: exact ? "exact" : "estimated",
           dateSource: "text",
         });
       }

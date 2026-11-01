@@ -182,7 +182,6 @@ describe("other noise patterns", () => {
       "Self-Regulatory Organizations; Example Clearing Inc.; Notice of Designation of Longer Period for Commission Action on Proposed Rule Change",
       "Self-Regulatory Organizations; Example Exchange; Order Granting Extension of Time",
       "Self-Regulatory Organizations; Example Exchange; Notice of Filing of a Proposed Rule Change To Make Technical Changes to Rule 1.1",
-      "Self-Regulatory Organizations; Example Exchange; Notice of Filing of Proposed Rule Change To Clarify Rule Text",
       "Self-Regulatory Organizations; Example Exchange; Notice of Filing of a Proposed Rule Change To Make Conforming Changes",
     ];
     for (const title of drops) {
@@ -224,12 +223,41 @@ describe("other noise patterns", () => {
     expect(isNoise({ title: keep })).toBe(false);
   });
 
-  it("drops 'Technical Correction(s)' anywhere in the title", () => {
-    expect(isNoise({ title: "Technical Corrections and Conforming Amendments to Export Rules" })).toBe(true);
-    expect(isNoise({ title: "Export Administration Regulations; Technical Correction" })).toBe(true);
+  it("drops technical correction titles where the correction is the whole change", () => {
+    expect(isNoise({ title: "Export Administration Regulations; Technical Corrections" })).toBe(true);
+    expect(isNoise({ title: "Technical Correction to the Entity List" })).toBe(true);
+    expect(isNoise({ title: "Example Rule; Technical Correction" })).toBe(true);
     expect(isNoise({ title: "Amendments to Swap Rules: Technical Corrections" })).toBe(true);
-    const keep = "Technical Standards for Swap Execution Facilities";
-    expect(isNoise({ title: keep })).toBe(false);
+  });
+
+  it("keeps technical corrections that accompany substantive additions", () => {
+    const keeps = [
+      "Entity List Additions; Technical Correction and Additions of Entities",
+      "Additions to the Entity List and Technical Corrections",
+      "Technical Corrections and Conforming Amendments to Export Rules",
+      "Technical Standards for Swap Execution Facilities",
+    ];
+    for (const title of keeps) {
+      expect(isNoise({ title })).toBe(false);
+    }
+  });
+
+  it("drops SEC longer-period / review-period-extension notices even without an SRO prefix", () => {
+    expect(isNoise({ title: "Example Clearing Agency; Notice of Designation of Longer Period for Commission Action on an Advance Notice" })).toBe(true);
+    expect(isNoise({ title: "Example Exchange; Notice of Extension of Review Period for a Proposed Rule Change" })).toBe(true);
+  });
+
+  it("drops SRO filings where clarification is the whole change, keeps clarifications paired with substantive changes", () => {
+    expect(isNoise({ title: "Self-Regulatory Organizations; Example Exchange; Notice of Filing of a Proposed Rule Change To Clarify Rule 4.2" })).toBe(true);
+    expect(isNoise({ title: "Self-Regulatory Organizations; Example Exchange; Notice of Filing of Clarifying Changes to Rule 7" })).toBe(true);
+    const keeps = [
+      "Self-Regulatory Organizations; Example Exchange; Notice of Filing of a Proposed Rule Change To Amend Its Listing Standards and To Clarify Rule 5.1",
+      "Self-Regulatory Organizations; Example Exchange; Notice of Filing of a Proposed Rule Change To Adopt New Rule 900 and To Clarify Existing Text",
+      "Self-Regulatory Organizations; Example Exchange; Notice of Filing of a Proposed Rule Change To List and Trade Shares of a Bitcoin Trust and Clarify Rule 14.11",
+    ];
+    for (const title of keeps) {
+      expect(isNoise({ title })).toBe(false);
+    }
   });
 
   it("drops marine-mammal incidental take authorizations, keeps other marine notices", () => {
@@ -288,7 +316,7 @@ describe("other noise patterns", () => {
 
 describe("noise pattern coverage", () => {
   it("covers every NOISE_PATTERNS entry (add a test when adding a pattern)", () => {
-    expect(NOISE_PATTERNS.length).toBe(16);
+    expect(NOISE_PATTERNS.length).toBe(18);
   });
 
   it("AD_CVD_RE is the first noise pattern (Section 232 override depends on identity)", () => {

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { classify, parseTextDates, type FrApiDoc } from "../src/catalysts/fr-classify.js";
+import { classify, operativeText, parseTextDates, roleDates, type FrApiDoc } from "../src/catalysts/fr-classify.js";
 
 const WINDOW = { today: "2026-11-01", end: "2027-05-01" };
 
@@ -58,7 +58,7 @@ describe("fr-classify fixtures", () => {
     const r = rows[0]!;
     expect(r.kind).toBe("presidential_action");
     expect(r.date).toBe("2026-12-04");
-    expect(r.datePrecision).toBe("estimated");
+    expect(r.datePrecision).toBe("exact");
     expect(r.dateSource).toBe("text");
     expect(r.dedupeKey).toBe("fr:2026-16400:2026-12-04");
     expect(r.title.startsWith("Proclamation in effect Dec 4")).toBe(true);
@@ -176,7 +176,7 @@ describe("fr-classify synthetic", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!.date).toBe("2026-11-10");
     expect(rows[0]!.kind).toBe("rule_effective");
-    expect(rows[0]!.datePrecision).toBe("estimated");
+    expect(rows[0]!.datePrecision).toBe("exact");
     expect(rows[0]!.dateSource).toBe("text");
   });
 
@@ -209,6 +209,49 @@ describe("fr-classify synthetic", () => {
 
   it("invalid effective_on format is ignored", () => {
     expect(classify(base({ effective_on: "20 November 2026" }), WINDOW)).toEqual([]);
+  });
+
+  it('proposed rule with effective_on == comments_close_on -> one comment_close row without "(replies"', () => {
+    const rows = classify(
+      base({ type: "Proposed Rule", effective_on: "2026-12-01", comments_close_on: "2026-12-01" }),
+      WINDOW,
+    );
+    expect(rows).toHaveLength(1);
+    const r = rows[0]!;
+    expect(r.kind).toBe("comment_close");
+    expect(r.date).toBe("2026-12-01");
+    expect(r.dedupeKey).toBe("fr:2026-1-TEST:comments:2026-12-01");
+    expect(r.title).not.toContain("(replies");
+  });
+
+  it('proposed rule with effective_on < comments_close_on -> initial deadline titled "(replies Dec 15)"', () => {
+    const rows = classify(
+      base({ type: "Proposed Rule", effective_on: "2026-12-01", comments_close_on: "2026-12-15" }),
+      WINDOW,
+    );
+    expect(rows).toHaveLength(1);
+    const r = rows[0]!;
+    expect(r.kind).toBe("comment_close");
+    expect(r.date).toBe("2026-12-01");
+    expect(r.dedupeKey).toBe("fr:2026-1-TEST:comments:2026-12-01");
+    expect(r.title).toContain("(replies Dec 15)");
+  });
+
+  it("presidential: only in-window operative dates are emitted", () => {
+    const body =
+      "do hereby proclaim as follows: (1) Effective on or after 12:01 a.m. eastern time on October 1, 2026, the duty applies. (2) Effective on or after 12:01 a.m. eastern time on December 1, 2026, the higher rate applies.";
+    const rows = classify(base({ type: "Presidential Document", subtype: "Proclamation", bodyText: body }), WINDOW);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe("presidential_action");
+    expect(rows[0]!.date).toBe("2026-12-01");
+  });
+
+  it("presidential: a single out-of-window operative date (past or beyond end) yields no rows", () => {
+    for (const date of ["October 1, 2026", "June 1, 2027"]) {
+      const body = `do hereby proclaim as follows: (1) Effective on or after 12:01 a.m. eastern time on ${date}, the duty applies.`;
+      const rows = classify(base({ type: "Presidential Document", subtype: "Proclamation", bodyText: body }), WINDOW);
+      expect(rows).toEqual([]);
+    }
   });
 });
 
@@ -275,11 +318,14 @@ describe("fr-classify properties", () => {
     }
   });
 
-  it("text rows are estimated, api rows exact", () => {
+  it("api rows exact; text rows exact only with a single unambiguous operative date", () => {
     for (const d of all) {
+      const { operative } = operativeText(d);
+      const opCands = roleDates(operative).filter((p) => p.date >= WINDOW.today && p.date <= WINDOW.end);
+      const textExact = opCands.length > 0 && new Set(opCands.map((p) => p.date)).size === 1 && !opCands.some((p) => p.vague);
       for (const r of classify(d, WINDOW)) {
-        if (r.dateSource === "text") expect(r.datePrecision).toBe("estimated");
-        else expect(r.datePrecision).toBe("exact");
+        if (r.dateSource === "api") expect(r.datePrecision).toBe("exact");
+        else expect(r.datePrecision).toBe(textExact ? "exact" : "estimated");
       }
     }
   });
@@ -306,5 +352,134 @@ describe("fr-classify properties", () => {
       const b = classify({ ...d, agencyLabel: "ZZZ Other" }, WINDOW);
       expect(b.map((r) => [r.dedupeKey, r.date, r.kind])).toEqual(a.map((r) => [r.dedupeKey, r.date, r.kind]));
     }
+  });
+});
+
+describe("fr-classify date precision", () => {
+  const precisionDocs = JSON.parse(
+    readFileSync(join(dirname(fileURLToPath(import.meta.url)), "fixtures", "fr-precision-docs.json"), "utf8"),
+  ) as Record<string, FrApiDoc>;
+  const pd = (dn: string): FrApiDoc => precisionDocs[dn]!;
+  const wideWindow = { today: "2026-08-20", end: "2027-05-01" };
+
+  it("2025-19846: stayed until Nov 9, 2026 → one exact suspension_end row, back in force Nov 10", () => {
+    const rows = classify(pd("2025-19846"), WINDOW);
+    expect(rows).toHaveLength(1);
+    const r = rows[0]!;
+    expect(r.kind).toBe("rule_effective");
+    expect(r.role).toBe("suspension_end");
+    expect(r.date).toBe("2026-11-10");
+    expect(r.datePrecision).toBe("exact");
+    expect(r.dateSource).toBe("text");
+  });
+
+  it("2025-19873: past 12:01 suspension start never chosen; end-of-day → one exact 2026-11-10 row", () => {
+    const rows = classify(pd("2025-19873"), WINDOW);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.date).toBe("2026-11-10");
+    expect(rows[0]!.datePrecision).toBe("exact");
+    expect(rows.every((r) => !r.date.startsWith("2025-"))).toBe(true);
+  });
+
+  it("2026-16400: proclamation with operative 12:01 clause → one exact presidential_action Dec 4", () => {
+    const rows = classify(pd("2026-16400"), WINDOW);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe("presidential_action");
+    expect(rows[0]!.date).toBe("2026-12-04");
+    expect(rows[0]!.datePrecision).toBe("exact");
+  });
+
+  it("2026-16979: one operative date in window → exact; two in a wider window → both estimated", () => {
+    const rows = classify(pd("2026-16979"), WINDOW);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe("presidential_action");
+    expect(rows[0]!.date).toBe("2027-02-09");
+    expect(rows[0]!.datePrecision).toBe("exact");
+
+    const wide = classify(pd("2026-16979"), wideWindow);
+    expect(wide.map((r) => r.date).sort()).toEqual(["2026-09-03", "2027-02-09"]);
+    expect(wide.every((r) => r.datePrecision === "estimated")).toBe(true);
+  });
+
+  it("vague wording → estimated, never exact", () => {
+    for (const dates of [
+      // bare "effective on or about <date>" matches a role clause in src → row is vague
+      "Effective on or about December 1, 2026.",
+      // the vague flag also fires when "on or about" appears elsewhere in the sentence
+      "On or about December 1, 2026, the rule is effective December 1, 2026.",
+      "The rule takes effect within 30 days of publication, effective December 1, 2026.",
+    ]) {
+      const rows = classify({ ...pd("2025-19846"), document_number: "T1", type: "Rule", dates, effective_on: null, abstract: null }, WINDOW);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.date).toBe("2026-12-01");
+      expect(rows[0]!.datePrecision).toBe("estimated");
+    }
+  });
+
+  it("date only in the preamble of a presidential doc → estimated", () => {
+    const doc: FrApiDoc = {
+      ...pd("2026-16400"),
+      document_number: "T2",
+      bodyText: "Whereas the investigation is effective December 1, 2026. NOW, THEREFORE, I proclaim as follows: (1) The duties apply as stated.",
+    };
+    const rows = classify(doc, WINDOW);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.date).toBe("2026-12-01");
+    expect(rows[0]!.datePrecision).toBe("estimated");
+  });
+
+  it("single explicit operative date → exact, with or without a clock time", () => {
+    for (const clause of [
+      "(1) Effective on or after 12:01 a.m. eastern time on December 1, 2026, the duty applies.",
+      "(1) Effective on or after December 1, 2026, the duty applies.",
+    ]) {
+      const doc: FrApiDoc = { ...pd("2026-16400"), document_number: "T3", bodyText: `do hereby proclaim as follows: ${clause}` };
+      const rows = classify(doc, WINDOW);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.date).toBe("2026-12-01");
+      expect(rows[0]!.datePrecision).toBe("exact");
+    }
+  });
+
+  it("two distinct in-window operative dates → all estimated", () => {
+    const doc: FrApiDoc = {
+      ...pd("2026-16400"),
+      document_number: "T4",
+      bodyText: "do hereby proclaim as follows: (1) Effective on or after December 1, 2026, the duty applies. (2) Effective on or after January 5, 2027, the higher rate applies.",
+    };
+    const rows = classify(doc, WINDOW);
+    expect(rows.map((r) => r.date).sort()).toEqual(["2026-12-01", "2027-01-05"]);
+    expect(rows.every((r) => r.datePrecision === "estimated")).toBe(true);
+  });
+
+  it("preamble 12:01 date is never chosen when the operative text has its own date", () => {
+    const doc: FrApiDoc = {
+      ...pd("2026-16400"),
+      document_number: "T5",
+      bodyText:
+        "Whereas the investigation found that the measures began 12:01 a.m. eastern time on January 5, 2027. NOW, THEREFORE, I proclaim as follows: (1) Effective on or after December 1, 2026, the duty applies.",
+    };
+    const rows = classify(doc, WINDOW);
+    expect(rows.map((r) => r.date)).toEqual(["2026-12-01"]);
+  });
+
+  it("a comments-through sentence in dates produces no rule_effective row", () => {
+    const rows = classify({ ...pd("2025-19846"), document_number: "T6", type: "Rule", dates: "Comments must be submitted through December 1, 2026.", effective_on: null, abstract: null }, WINDOW);
+    expect(rows.filter((r) => r.kind === "rule_effective")).toEqual([]);
+  });
+
+  it("fr-classify date precision: preamble dates are ignored when the operative text has any role date", () => {
+    const rows = classify({
+      ...pd("2025-19846"),
+      document_number: "T7",
+      type: "Rule",
+      title: "Measures To Restrict Stockpiling of Example Products",
+      dates: "This rule is effective September 22, 2026, through December 3, 2026.",
+      abstract: "The President's import adjustments will be effective on December 4, 2026.",
+      effective_on: "2026-09-22",
+      comments_close_on: null,
+      bodyText: null,
+    }, WINDOW);
+    expect(rows).toEqual([]);
   });
 });

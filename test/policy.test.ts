@@ -1,6 +1,35 @@
 import { describe, expect, it, vi } from "vitest";
-import { syncPolicyEvents } from "../src/catalysts/policy.js";
+import { curatedFrDocNumbers, frDocNumbersFromEvents, syncPolicyEvents } from "../src/catalysts/policy.js";
 import type { Catalyst } from "../src/types.js";
+
+describe("frDocNumbersFromEvents", () => {
+  it("extracts the FR doc number from a federalregister.gov /documents/YYYY/MM/DD/<doc-number>/ URL and ignores non-FR URLs", () => {
+    const events = [
+      {
+        sourceUrl: "https://www.federalregister.gov/documents/2026/08/11/2026-16400/adjusting-imports-of-polysilicon-and-its-derivatives-into-the-united-states",
+      },
+      { sourceUrl: "https://www.whitehouse.gov/presidential-actions/2026/08/adjusting-imports-of-polysilicon/" },
+      { sourceUrl: "https://ustr.gov/issues/china" },
+    ];
+    expect(frDocNumbersFromEvents(events)).toEqual(new Set(["2026-16400"]));
+  });
+
+  it("reads frDocumentNumber/documentNumber fields when present", () => {
+    expect(frDocNumbersFromEvents([{ sourceUrl: "https://x/1", frDocumentNumber: "2025-21671" }])).toEqual(new Set(["2025-21671"]));
+    expect(frDocNumbersFromEvents([{ sourceUrl: "https://x/2", documentNumber: "2026-16979" }])).toEqual(new Set(["2026-16979"]));
+  });
+
+  it("the real data/policy-events.json yields the curated FR doc numbers", async () => {
+    const nums = await curatedFrDocNumbers("data/policy-events.json");
+    expect(nums.has("2026-16400")).toBe(true);
+    expect(nums.has("2026-16979")).toBe(true);
+    expect(nums.has("2025-21671")).toBe(true);
+  });
+
+  it("never throws on a missing file; returns an empty set", async () => {
+    await expect(curatedFrDocNumbers("data/definitely-missing.json")).resolves.toEqual(new Set());
+  });
+});
 
 const store = () => ({
   upsertCatalyst: vi.fn(async (c: unknown) => ({ ...(c as object) } as Catalyst)),

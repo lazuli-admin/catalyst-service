@@ -30,8 +30,11 @@ const SEC_SRO_MISS =
 const KNOWN_MISSES: Record<string, string> = {
   "2025-19818":
     "USMCA Labor Council meeting notice: matches USMCA topic; meeting notices are not filtered as noise yet (known FP)",
-  "2026-08478": SEC_SRO_MISS,
   "2025-23937": SEC_SRO_MISS,
+  "2026-19395":
+    "known false positive: substantive SRO rule change that also clarifies; kept by the narrowed clarify noise rule (review item 8) and matches a topic (not pattern-fit)",
+  "2026-16097":
+    "known false positive: substantive SRO rule change that also clarifies; kept by the narrowed clarify noise rule (review item 8) and matches a topic (not pattern-fit)",
 };
 
 describe("fr-blind regression gates", () => {

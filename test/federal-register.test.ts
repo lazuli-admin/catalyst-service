@@ -1,11 +1,18 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os, { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { catalystDensity } from "../src/catalysts/density.js";
 import { ELECTIONS, FR_AGENCIES, getLastFrSyncReport, syncElections, syncFederalRegister } from "../src/catalysts/federal-register.js";
+import { frDocNumbersFromEvents, syncPolicyEvents } from "../src/catalysts/policy.js";
+import { memoryStore } from "./helpers.js";
 import { isRelevant, topicTags } from "../src/topics.js";
 import type { Catalyst } from "../src/types.js";
 
-const res = (body: unknown, ok = true) => ({
+const res = (body: unknown, ok = true, status = ok ? 200 : 500, headers: Record<string, string> = {}) => ({
   ok,
-  status: ok ? 200 : 500,
+  status,
+  headers: { get: (name: string) => { const k = Object.keys(headers).find((h) => h.toLowerCase() === name.toLowerCase()); return k ? headers[k] : null; } },
   json: async () => body,
   text: async () => (typeof body === "string" ? body : JSON.stringify(body)),
 });
@@ -96,8 +103,15 @@ describe("syncFederalRegister", () => {
       ["Dual rule on integrated circuits", "2026-11-06"],
       ["BIS: rule back in force Nov 10 (suspension ends Nov 9) — Dual rule on integrated circuits", "2026-11-10"],
       ["Dup rule for a foundry", "2026-11-07"],
+      ["Dup rule for a foundry", "2026-11-06"],
     ]);
     expect(rows.every((r) => r.dedupeKey.startsWith("fr:"))).toBe(true);
+    const abstractRow = rows[rows.length - 1]!;
+    expect(abstractRow.datePrecision).toBe("estimated");
+    const apiRow = rows.find((r) => r.dateStart === "2026-11-07");
+    expect(apiRow?.datePrecision).toBe("exact");
+    expect(apiRow?.dateSource).toBe("api");
+    expect(abstractRow.dateSource).toBe("text");
   });
 
   it("FCC: only spectrum/broadband/satellite/net-neutrality/merger rules are kept", async () => {
@@ -579,5 +593,228 @@ describe("federal register paging and PRESDOCU", () => {
     const report = getLastFrSyncReport();
     expect(report!.complete).toBe(false);
     expect(report!.queries.find((q) => q.name === "PRESDOCU")).toMatchObject({ ok: false, error: "HTTP 500" });
+  });
+
+  it("PRESDOCU: relevant doc without raw_text_url -> query fails, report incomplete, no purge", async () => {
+    const fetchImpl = mockFetch({
+      PRESDOCU: {
+        results: [
+          {
+            title: "Adjusting Imports of Semiconductors Into the United States",
+            type: "Presidential Document",
+            subtype: "Proclamation",
+            effective_on: null,
+            html_url: "https://www.federalregister.gov/d/2026-26302",
+            abstract: "",
+            document_number: "2026-26302",
+          },
+        ],
+        total_pages: 1,
+      },
+    });
+    const s = store();
+    s.listStaleCatalysts.mockResolvedValue([{ dedupeKey: "fr:2026-26301:2026-12-04", title: "Stale proclamation row" }]);
+    await syncFederalRegister(s, {
+      ...opts,
+      horizonDays: 60,
+      sleep: async () => {},
+      curatedDocNumbers: new Set(),
+      fetch: fetchImpl as unknown as typeof fetch,
+    });
+    expect(catalysts(s)).toHaveLength(0);
+    const report = getLastFrSyncReport();
+    expect(report!.complete).toBe(false);
+    expect(report!.queries.find((q) => q.name === "PRESDOCU")).toMatchObject({ ok: false, error: expect.stringContaining("missing raw_text_url") });
+    expect(s.listStaleCatalysts).not.toHaveBeenCalled();
+    expect(s.purgeStaleCatalysts).not.toHaveBeenCalled();
+  });
+});
+
+describe("curated FR doc number skipping", () => {
+  const polysiliconDoc = {
+    title: "Adjusting Imports of Polysilicon and Its Derivatives Into the United States Under Section 232",
+    type: "Presidential Document",
+    subtype: "Proclamation",
+    effective_on: null,
+    html_url: "https://www.federalregister.gov/documents/2026/08/11/2026-16400/adjusting-imports-of-polysilicon-and-its-derivatives-into-the-united-states",
+    abstract: "",
+    document_number: "2026-16400",
+    raw_text_url: "https://www.federalregister.gov/documents/full_text/raw/2026-16400.txt",
+  };
+  const proclamationText =
+    "do hereby proclaim as follows: (1) Effective with respect to goods entered on or after 12:01 a.m. eastern time on December 4, 2026, imports of polysilicon shall be subject to minimum import prices plus a 15% duty.";
+
+  it("skips a curated doc: no upsert, skippedCurated reported, pre-existing fr row purged as curated duplicate", async () => {
+    const fetchImpl = mockFetch({ PRESDOCU: { results: [polysiliconDoc], total_pages: 1 }, rawText: proclamationText });
+    const s = store();
+    s.listStaleCatalysts.mockImplementation(async (kind: unknown) =>
+      kind === "presidential_action"
+        ? [{ dedupeKey: "fr:2026-16400:2026-12-04", title: "Proclamation in effect Dec 4: Adjusting Imports of Polysilicon" }]
+        : [],
+    );
+    await syncFederalRegister(s, { ...opts, horizonDays: 60, fetch: fetchImpl as unknown as typeof fetch, curatedDocNumbers: new Set(["2026-16400"]) });
+    expect(catalysts(s)).toHaveLength(0);
+    expect(fetchImpl).not.toHaveBeenCalledWith(polysiliconDoc.raw_text_url);
+    const report = getLastFrSyncReport();
+    expect(report!.complete).toBe(true);
+    expect(report!.skippedCurated).toEqual(["2026-16400"]);
+    expect(report!.drops).toEqual([
+      { dedupeKey: "fr:2026-16400:2026-12-04", title: "Proclamation in effect Dec 4: Adjusting Imports of Polysilicon", reason: "curated duplicate" },
+    ]);
+  });
+
+  it("FSLR double count: curated policy row + skipped FR doc -> exactly ONE Dec 4 item for FSLR, no cluster bonus", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "fr-curated-"));
+    const file = path.join(dir, "policy-events.json");
+    const event = {
+      id: "s232-polysilicon-effective",
+      date: "2026-12-04",
+      dateEnd: "2026-12-04",
+      precision: "exact",
+      title: "Section 232 polysilicon: minimum import prices plus 15% duty take effect 12:01 a.m. ET (Proclamation, FR 2026-16400)",
+      kind: "rule_effective",
+      sourceUrl: "https://www.federalregister.gov/documents/2026/08/11/2026-16400/adjusting-imports-of-polysilicon-and-its-derivatives-into-the-united-states",
+      themes: ["solar", "polysilicon", "Section 232"],
+      affectedTickers: ["FSLR"],
+    };
+    await writeFile(file, JSON.stringify({ events: [event] }), "utf8");
+    try {
+      const s = await memoryStore();
+      const today = "2026-12-01";
+      await syncPolicyEvents(s, { today, horizonDays: 10, file });
+      const fetchImpl = mockFetch({ PRESDOCU: { results: [polysiliconDoc], total_pages: 1 }, rawText: proclamationText });
+      await syncFederalRegister(s, {
+        today,
+        horizonDays: 10,
+        fetch: fetchImpl as unknown as typeof fetch,
+        sleep: async () => {},
+        curatedDocNumbers: frDocNumbersFromEvents([event]),
+      });
+      const cats = await s.listCatalysts({ from: "2026-12-04", to: "2026-12-04", includeLeads: true });
+      const fslr = catalystDensity(cats, { asOf: today }).find((t) => t.ticker === "FSLR");
+      expect(fslr).toBeDefined();
+      // Exactly one Dec 4 item (the curated policy row) — the FR row was skipped, so no multi-kind cluster bonus.
+      expect(fslr!.items).toHaveLength(1);
+      expect(fslr!.items[0]!.catalyst.dedupeKey).toBe("policy:s232-polysilicon-effective");
+      expect(fslr!.clusters).toHaveLength(0);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("FR result cap, empty-page guard, and bounded retry", () => {
+  const doc = { title: "Advanced computing chip rule", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "rt-1" };
+
+  // Fetch mock that returns a per-slug sequence of responses, one per attempt on that slug's URLs.
+  function perSlugAttempt(handlers: Record<string, (attempt: number, url: string) => unknown>) {
+    const attempts = new Map<string, number>();
+    return vi.fn(async (url: string) => {
+      const slug = Object.keys(handlers).find((s) => url.includes(s));
+      if (!slug) return res({ results: [] });
+      const n = (attempts.get(slug) ?? 0) + 1;
+      attempts.set(slug, n);
+      return handlers[slug]!(n, url);
+    });
+  }
+
+  function recordingSleep() {
+    const delays: number[] = [];
+    const sleep = vi.fn(async (ms: number) => {
+      delays.push(ms);
+    });
+    return { sleep, delays };
+  }
+
+  const bisCalls = (fetchImpl: ReturnType<typeof perSlugAttempt>) =>
+    fetchImpl.mock.calls.filter(([u]) => String(u).includes(BIS)).length;
+
+  it("count >= 10000 on a query -> query ok:false with 'result cap', complete false, stale fr row NOT purged", async () => {
+    const fetchImpl = perSlugAttempt({ [BIS]: () => res({ results: [], count: 10000 }) });
+    const s = store();
+    s.listStaleCatalysts.mockResolvedValue([{ dedupeKey: "fr:stale-1:2026-12-01", title: "Stale row" }]);
+    const { sleep } = recordingSleep();
+    await syncFederalRegister(s, { ...opts, sleep, curatedDocNumbers: new Set(), fetch: fetchImpl as unknown as typeof fetch });
+    const report = getLastFrSyncReport();
+    expect(report!.complete).toBe(false);
+    expect(report!.queries.find((q) => q.name === "BIS")).toMatchObject({ ok: false, error: "result cap: count 10000 >= 10000" });
+    expect(s.listStaleCatalysts).not.toHaveBeenCalled();
+    expect(s.purgeStaleCatalysts).not.toHaveBeenCalled();
+  });
+
+  it("empty page before total_pages (total_pages 3, page 2 empty) -> ok:false 'empty page 2 of 3', complete false, no purge", async () => {
+    const fetchImpl = mockFetch({
+      [BIS]: (page: number) =>
+        page === 1 ? { results: [{ ...doc, document_number: "ep-1" }], total_pages: 3 } : { results: [] },
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, sleep: async () => {}, curatedDocNumbers: new Set(), fetch: fetchImpl as unknown as typeof fetch });
+    const report = getLastFrSyncReport();
+    expect(report!.complete).toBe(false);
+    expect(report!.queries.find((q) => q.name === "BIS")).toMatchObject({ ok: false, error: "empty page 2 of 3" });
+    expect(s.purgeStaleCatalysts).not.toHaveBeenCalled();
+  });
+
+  it("empty first page with total_pages 0 -> normal complete end, purge runs", async () => {
+    const fetchImpl = mockFetch({ [BIS]: { results: [], total_pages: 0 } });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, sleep: async () => {}, curatedDocNumbers: new Set(), fetch: fetchImpl as unknown as typeof fetch });
+    expect(getLastFrSyncReport()!.complete).toBe(true);
+    expect(s.purgeStaleCatalysts).toHaveBeenCalledTimes(4);
+  });
+
+  it("429 with Retry-After: 2 then 200 -> succeeds, sleep called with 2000 plus politeness delays, 2 fetch calls", async () => {
+    const fetchImpl = perSlugAttempt({
+      // Page 1: 429 then 200; total_pages 1 stops paging there.
+      [BIS]: (attempt, url) => /[?&]page=([2-9]|\d+)/.exec(url)![1] !== "1" ? res({ results: [] }) : attempt === 1 ? res({ results: [] }, false, 429, { "Retry-After": "2" }) : res({ results: [doc], total_pages: 1 }),
+    });
+    const s = store();
+    const { sleep, delays } = recordingSleep();
+    await syncFederalRegister(s, { ...opts, sleep, curatedDocNumbers: new Set(), fetch: fetchImpl as unknown as typeof fetch });
+    expect(catalysts(s).map((r) => r.dedupeKey)).toEqual(["fr:rt-1:2026-11-05"]);
+    expect(getLastFrSyncReport()!.complete).toBe(true);
+    expect(bisCalls(fetchImpl)).toBe(2);
+    expect(delays[0]).toBe(2000);
+    // Only the 2000ms retry delay and normal 250ms politeness delays remain.
+    expect(delays.every((d) => d === 2000 || d === 250)).toBe(true);
+    expect(delays.filter((d) => d === 2000)).toHaveLength(1);
+  });
+
+  it("503, 503, 200 -> succeeds with exponential backoff delays 1000 and 2000", async () => {
+    const fetchImpl = perSlugAttempt({
+      // Page 1: 503, 503, then 200; total_pages 1 stops paging there.
+      [BIS]: (attempt, url) => /[?&]page=([2-9]|\d+)/.exec(url)![1] !== "1" ? res({ results: [] }) : attempt <= 2 ? res({ results: [] }, false, 503) : res({ results: [doc], total_pages: 1 }),
+    });
+    const s = store();
+    const { sleep, delays } = recordingSleep();
+    await syncFederalRegister(s, { ...opts, sleep, curatedDocNumbers: new Set(), fetch: fetchImpl as unknown as typeof fetch });
+    expect(catalysts(s).map((r) => r.dedupeKey)).toEqual(["fr:rt-1:2026-11-05"]);
+    expect(getLastFrSyncReport()!.complete).toBe(true);
+    expect(bisCalls(fetchImpl)).toBe(3);
+    expect(delays.slice(0, 2)).toEqual([1000, 2000]);
+  });
+
+  it("500 three times -> query ok:false with 'HTTP 500' after exactly 3 attempts", async () => {
+    const fetchImpl = perSlugAttempt({ [BIS]: () => res({ results: [] }, false, 500) });
+    const s = store();
+    const { sleep, delays } = recordingSleep();
+    await syncFederalRegister(s, { ...opts, sleep, curatedDocNumbers: new Set(), fetch: fetchImpl as unknown as typeof fetch });
+    const report = getLastFrSyncReport();
+    expect(report!.complete).toBe(false);
+    expect(report!.queries.find((q) => q.name === "BIS")).toMatchObject({ ok: false, error: "HTTP 500" });
+    expect(bisCalls(fetchImpl)).toBe(3);
+    expect(delays.slice(0, 2)).toEqual([1000, 2000]);
+  });
+
+  it("404 -> no retry (1 attempt), query ok:false with 'HTTP 404'", async () => {
+    const fetchImpl = perSlugAttempt({ [BIS]: () => res({ results: [] }, false, 404) });
+    const s = store();
+    const { sleep, delays } = recordingSleep();
+    await syncFederalRegister(s, { ...opts, sleep, curatedDocNumbers: new Set(), fetch: fetchImpl as unknown as typeof fetch });
+    const report = getLastFrSyncReport();
+    expect(report!.complete).toBe(false);
+    expect(report!.queries.find((q) => q.name === "BIS")).toMatchObject({ ok: false, error: "HTTP 404" });
+    expect(bisCalls(fetchImpl)).toBe(1);
+    expect(delays.every((d) => d === 250)).toBe(true);
   });
 });

@@ -116,6 +116,7 @@ export function buildServer(store: Store, deps: PipelineDeps, opts: { lock?: Syn
       ok: true,
       locks: lock.stats(),
       frDrops: report ? { at: report.at, count: report.count, drops: report.drops.slice(0, 10), complete: report.complete, queries: report.queries } : null,
+      frSkippedCurated: report ? report.skippedCurated : null,
     };
   });
   app.get("/source-types", async () => listAdapters());

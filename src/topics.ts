@@ -166,7 +166,7 @@ export const TOPICS: Topic[] = [
     label: "Swaps & margining",
     patterns: [
       // bare "swap(s)" with general negative lookarounds to drop swap data repositories, currency/liquidity swaps, swap lines, and fund-affiliate swaps
-      /(?<!debt[- ]for[- ]nature |currency[- ]|liquidity[- ])\bswaps?\b(?!\s*(?:data repositor|lines?|with affiliated))|security-based swap|portfolio margin|cross-margin|clearing requirement determinations?|clearing agenc/i,
+      /(?<!debt[- ]for[- ]nature |(?<!cross[- ])currency[- ]|liquidity[- ])\bswaps?\b(?!\s*(?:data repositor|lines?|with affiliated))|security-based swap|portfolio margin|cross-margin|clearing requirement determinations?|clearing agenc/i,
     ],
     themes: ["derivatives markets"],
     // tickers are hand-curated, illustrative
@@ -176,9 +176,9 @@ export const TOPICS: Topic[] = [
     id: "submarine-cables",
     label: "Submarine cables & network security",
     patterns: [
-      /(submarine|undersea|subsea)\W+(\w+\W+){0,3}cables?/i,
+      /^(?![\s\S]*\b(environmental assessments?|environmental impact statements?|EIS|finding of no significant impact|FONSI)\b)[\s\S]*(submarine|undersea|subsea)\W+(\w+\W+){0,3}cables?/i,
       // "cable landing" only when it is a regulatory/telecom action (e.g. license issuance or related rules)
-      /cable landing (licen[cs]e|rules|act|applications?|stations?)|licen[cs]e[^.]{0,40}cable landing/i,
+      /^(?![\s\S]*\b(environmental assessments?|environmental impact statements?|EIS|finding of no significant impact|FONSI)\b)[\s\S]*(?:cable landing (licen[cs]e|rules|act|applications?|stations?)|licen[cs]e[^.]{0,40}cable landing)/i,
     ],
     themes: ["submarine cables"],
     // tickers are hand-curated, illustrative
@@ -210,7 +210,7 @@ export const TOPICS: Topic[] = [
       // options on ETFs/trusts holding crypto
       /options?[^.;]{0,40}(ETF|trust)[^.]{0,30}(holding|that hold)[^.;]{0,20}(crypto|bitcoin|digital asset)/i,
       /tokenized securities|tokeniz(ation|ed form)/i,
-      /generic listing (standards|criteria)|continued listing (standards|requirements)/i,
+      /generic listing (standards?|criteria)|continued listing (standards?|requirements?)/i,
       /\bevent contracts?\b/i,
       // index options expiring on additional days (keep scoped to options/expirations)
       /(options|expir\w*)[^.;]{0,80}(Monday|Tuesday|Wednesday|Thursday|Friday|daily|end-of-month)/i,
@@ -248,7 +248,11 @@ export const NOISE_PATTERNS: RegExp[] = [
   /information collection|submission (to|for) (the )?OMB|paperwork reduction/i,
   /^sunshine act/i,
   // SRO noise only: routine procedural/admin filings (fees, timing, technical/clarifying/conforming tweaks), not substantive rule filings.
-  /^self-regulatory organizations\b.*(\bfees?\b|fee schedule|pricing|designation of (a )?longer period|extension of (the )?time|technical (changes?|amendments?)|clarif(y|ying|ication)|conforming (changes?|amendments?))/i,
+  /^self-regulatory organizations\b.*(\bfees?\b|fee schedule|pricing|technical (changes?|amendments?)|conforming (changes?|amendments?))/i,
+  // SEC procedural timing notices, regardless of SRO prefix (advance notices, review-period extensions)
+  /designation of (a )?longer period|extension of (the )?(review period|time)\b/i,
+  // SRO filings where a clarification is the whole change (kept when paired with substantive words like adopt/establish/list and trade/listing/amend ... listing)
+  /^self-regulatory organizations\b(?!.*\b(adopt|establish|list and trade|listing (standards?|requirements?|rules?)|amend[^;]{0,40}listing)\b).*(\bto clarify\b|\bclarifying (changes?|amendments?)\b)/i,
   /petition for rulemaking|petition for reconsideration/i,
   /commercial gauger|commercial laborator/i,
   /list of rules to be reviewed/i,
@@ -262,8 +266,8 @@ export const NOISE_PATTERNS: RegExp[] = [
   /short[- ]supply|commercial availability/i,
   // marine-mammal incidental take authorizations (e.g. for cable landing construction)
   /incidental take|marine mammals?/i,
-  // routine technical correction titles are non-substantive amendments
-  /technical corrections?\b/i,
+  // technical corrections are noise only when the correction is the whole change (kept when paired with additions, e.g. "and Technical Corrections" or "Technical Correction and ...")
+  /^(?!.*(\btechnical corrections?\s+(and|&)\s+\w|\b(and|&)\s+technical corrections?\b)).*\btechnical corrections?\b/i,
 ];
 
 export interface FrDoc {
