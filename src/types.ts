@@ -81,6 +81,7 @@ export type CatalystKind =
   | "buyback_offering"
   | "buildout_completion"
   | "rule_effective"
+  | "rule_expiry"
   | "index_rebalance"
   | "macro"
   | "election"

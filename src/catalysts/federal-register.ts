@@ -46,7 +46,7 @@ export function getLastFrSyncReport(): FrSyncReport | null {
   return lastFrSyncReport;
 }
 
-const FR_KINDS = ["rule_effective", "comment_close", "presidential_action", "regulatory_decision"] as const;
+const FR_KINDS = ["rule_effective", "rule_expiry", "comment_close", "presidential_action", "regulatory_decision"] as const;
 
 export async function syncFederalRegister(
   store: Pick<Store, "upsertCatalyst" | "purgeStaleCatalysts" | "listStaleCatalysts">,

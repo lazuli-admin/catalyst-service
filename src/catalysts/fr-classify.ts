@@ -19,8 +19,14 @@ export interface FrApiDoc {
   bodyText?: string | null;
 }
 
-export type DateRole = "effective" | "comment_close" | "reply_comment_close" | "suspension_end" | "compliance";
-export type FrEventKind = "rule_effective" | "comment_close" | "presidential_action";
+export type DateRole =
+  | "effective"
+  | "comment_close"
+  | "reply_comment_close"
+  | "suspension_end"
+  | "compliance"
+  | "expiry";
+export type FrEventKind = "rule_effective" | "rule_expiry" | "comment_close" | "presidential_action";
 
 export interface CandidateEvent {
   dedupeKey: string;
@@ -88,8 +94,20 @@ const ROLE_END_OF_DAY_RE = new RegExp(String.raw`\b(?:through|until)\s+11:59\s*p
 /** "stayed until <date>", "suspended … until|through <date>" (no clock time), or "the suspension
  *  (is/will be) (set to) end(s)/expire(s)/terminate(s) <date>" — the stay covers the date, back in force the NEXT day. */
 const ROLE_SUSPENSION_RE = new RegExp(String.raw`\b(?:stayed\s+until|suspended\s+.{0,120}?\b(?:until|through)|suspension\s+(?:is\s+|will\s+)?(?:set\s+to\s+)?(?:ends?|expires?|terminates?))\s+(?!\d{1,2}:\d{2})(${MONTH_FULL})\b`, "gi");
-/** "12:01 a.m. … <date>", "effective [on] <date>", "on or after <date>", "in force <date>", "expires <date>" — effective that day. */
-const ROLE_EFFECTIVE_RE = new RegExp(String.raw`\b(?:12:01\s*a\.m\. [a-z ]{0,60}?(?:on\s+)?|effective(?:\s+on)?\s+(?:on\s+or\s+about\s+|approximately\s+)?|on\s+or\s+after\s+(?:on\s+or\s+about\s+|approximately\s+)?|in\s+force\s+(?:on\s+)?|expires?\s+)(${MONTH_FULL})\b`, "gi");
+/** Expiry clauses — the date is the FIRST DAY NOT IN FORCE. "expires [on] <date>", "effective [A,]
+ *  until|through <date>", "in (effect|force) until|through <date>" cover the date itself, so the rule
+ *  lapses the NEXT day — except start-of-day clauses ("expires at 12:01 a.m. … on <date>", "until
+ *  12:01 a.m. … on <date>"), where the change happens at the start of the date. Bare forms never
+ *  swallow clock times ("until|expires 11:59 p.m. …" stays with ROLE_END_OF_DAY_RE). */
+const ROLE_EXPIRY_RE = new RegExp(
+  String.raw`\b(?:(?:expires?\s+at|until|through)\s+12:01\s*a\.m\. [a-z ]{0,60}?(?:on\s+)?` +
+    String.raw`|expires?\s+(?:on\s+)?(?!\s*\d{1,2}:\d{2})` +
+    String.raw`|(?:effective(?:\s+on)?\s+[^.;]{0,120}?|remains?\s+in\s+(?:effect|force)\s+|in\s+(?:effect|force)\s+)(?:until|through)\s+(?!\s*\d{1,2}:\d{2}))` +
+    String.raw`(${MONTH_FULL})\b`,
+  "gi",
+);
+/** "12:01 a.m. … <date>", "effective [on] <date>", "on or after <date>", "in force <date>" — effective that day. */
+const ROLE_EFFECTIVE_RE = new RegExp(String.raw`\b(?:12:01\s*a\.m\. [a-z ]{0,60}?(?:on\s+)?|effective(?:\s+on)?\s+(?:on\s+or\s+about\s+|approximately\s+)?|on\s+or\s+after\s+(?:on\s+or\s+about\s+|approximately\s+)?|in\s+force\s+(?:on\s+)?)(${MONTH_FULL})\b`, "gi");
 
 /** Text markers that open the operative part of a presidential document (order, proclamation, section heading). */
 export const PRESIDENTIAL_OPERATIVE_MARKERS: RegExp[] = [
@@ -152,6 +170,11 @@ export function roleDates(text: string): TextDate[] {
     for (const m of sentence.matchAll(ROLE_EFFECTIVE_RE)) {
       const date = toIso(m[1]!);
       if (date) push(m, "effective", date);
+    }
+    for (const m of sentence.matchAll(ROLE_EXPIRY_RE)) {
+      const base = toIso(m[1]!);
+      // start-of-day clauses (12:01 a.m.) lapse the date itself; bare/until/through clauses the next day.
+      if (base) push(m, "expiry", /12:01/.test(m[0]) ? base : nextDay(base));
     }
   }
   return out;
@@ -240,14 +263,17 @@ export function classify(doc: FrApiDoc, window: { today: string; end: string }):
       for (const date of distinct) {
         const susp = cands.find((p) => p.date === date && p.role === "suspension_end");
         if (susp && /^(request for comments|applications for)/i.test(doc.title)) continue;
+        const expiry = !susp && cands.some((p) => p.date === date && p.role === "expiry");
         const endIso = susp ? toIso([...susp.raw.matchAll(MONTH_FULL_RE)].pop()![0]!) : null;
         add({
           dedupeKey: `fr:${doc.document_number}:${date}`,
           title: susp
             ? `${/affiliat|end-user/i.test(doc.title) ? `${label} affiliates rule` : `${label}: rule`} back in force ${fmtDate(date)} (suspension ends ${fmtDate(endIso!)}) — ${doc.title}`
-            : doc.title,
-          kind: "rule_effective",
-          role: susp ? "suspension_end" : "effective",
+            : expiry
+              ? `${label}: expires — first day not in force ${fmtDate(date)} — ${doc.title}`
+              : doc.title,
+          kind: expiry ? "rule_expiry" : "rule_effective",
+          role: susp ? "suspension_end" : expiry ? "expiry" : "effective",
           date,
           datePrecision: exact ? "exact" : "estimated",
           dateSource: "text",
