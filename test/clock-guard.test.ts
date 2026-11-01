@@ -31,7 +31,7 @@ const MARKER = "// clock-guard: pure-date";
 const ALLOWLIST = [
   "src/catalysts/macro-primary.ts:41",
   "src/catalysts/federal-register.ts:38",
-  "src/catalysts/federal-register.ts:69",
+  "src/catalysts/federal-register.ts:83",
   "src/catalysts/fr-classify.ts:52",
   "src/catalysts/fr-classify.ts:56",
   "src/catalysts/calendars.ts:54",
@@ -41,7 +41,7 @@ const ALLOWLIST = [
   "src/catalysts/page.ts:121",
   "src/catalysts/page.ts:187",
   "src/catalysts/page.ts:188",
-  "src/catalysts/policy.ts:41",
+  "src/catalysts/policy.ts:37",
   "src/market.ts:143",
 ];
 

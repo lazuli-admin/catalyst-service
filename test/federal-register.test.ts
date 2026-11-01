@@ -693,6 +693,49 @@ describe("curated FR doc number skipping", () => {
     ]);
   });
 
+  it("aborts before any fetch or store write when curated doc numbers are unavailable (fail closed)", async () => {
+    const fetchImpl = mockFetch({});
+    const s = store();
+    await syncFederalRegister(s, {
+      ...opts,
+      fetch: fetchImpl as unknown as typeof fetch,
+      curatedDocNumbersLoader: async () => {
+        throw new Error("curated file unreadable");
+      },
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(s.upsertCatalyst).not.toHaveBeenCalled();
+    expect(s.purgeStaleCatalysts).not.toHaveBeenCalled();
+    expect(s.listStaleCatalysts).not.toHaveBeenCalled();
+    const report = getLastFrSyncReport();
+    expect(report!.complete).toBe(false);
+    expect(report!.curatedError).toContain("curated file unreadable");
+  });
+
+  // The FR doc has two in-window dates (effective Nov 5, in force until Nov 9) that classify would emit as
+  // two rows — but curation skips the whole doc. The curated policy row must cover the dates that matter.
+  it("curated skip is per-doc: a second in-window date in a curated doc is hidden (documented limitation)", async () => {
+    const fetchImpl = mockFetch({
+      [BIS]: {
+        results: [
+          {
+            title: "Rule with two in-window dates",
+            type: "Rule",
+            effective_on: "2026-11-05",
+            html_url: "https://www.federalregister.gov/d/2026-77777",
+            abstract: "This rule is effective November 5, 2026. The rule remains in force until November 9, 2026.",
+            document_number: "2026-77777",
+          },
+        ],
+      },
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch, curatedDocNumbers: new Set(["2026-77777"]) });
+    expect(catalysts(s)).toHaveLength(0);
+    const report = getLastFrSyncReport();
+    expect(report!.skippedCurated).toEqual(["2026-77777"]);
+  });
+
   it("FSLR double count: curated policy row + skipped FR doc -> exactly ONE Dec 4 item for FSLR, no cluster bonus", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "fr-curated-"));
     const file = path.join(dir, "policy-events.json");

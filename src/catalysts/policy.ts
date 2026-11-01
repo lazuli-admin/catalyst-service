@@ -26,15 +26,11 @@ export function frDocNumbersFromEvents(events: FrNumberedEvent[]): Set<string> {
   return out;
 }
 
-/** FR document numbers cited by the curated policy file, so FR sync can skip them (no duplicate rows). Never throws. */
+/** FR document numbers cited by the curated policy file, so FR sync can skip them (no duplicate rows). Throws on read/parse errors (fail closed). */
 export async function curatedFrDocNumbers(file?: string): Promise<Set<string>> {
-  try {
-    const f = file ?? path.join(process.cwd(), "data", "policy-events.json");
-    const body = JSON.parse(await readFile(f, "utf8")) as { events?: FrNumberedEvent[] };
-    return frDocNumbersFromEvents(body.events ?? []);
-  } catch {
-    return new Set();
-  }
+  const f = file ?? path.join(process.cwd(), "data", "policy-events.json");
+  const body = JSON.parse(await readFile(f, "utf8")) as { events?: FrNumberedEvent[] };
+  return frDocNumbersFromEvents(body.events ?? []);
 }
 
 function horizonEnd(today: string, horizonDays: number): string {

@@ -40,10 +40,14 @@ function horizonEnd(today: string, horizonDays: number): string {
 
 export type FrDrop = { dedupeKey: string; title: string; reason: string };
 export type FrQueryReport = { name: string; pages: number; totalPages: number | null; docs: number; ok: boolean; error?: string };
-export type FrSyncReport = { at: string; complete: boolean; count: number; drops: FrDrop[]; skippedCurated: string[]; noOperativeMarker: string[]; queries: FrQueryReport[] };
+export type FrSyncReport = { at: string; complete: boolean; count: number; drops: FrDrop[]; skippedCurated: string[]; noOperativeMarker: string[]; queries: FrQueryReport[]; curatedError?: string };
 let lastFrSyncReport: FrSyncReport | null = null;
 export function getLastFrSyncReport(): FrSyncReport | null {
   return lastFrSyncReport;
+}
+/** Clears the remembered sync report; only for tests that need a clean slate between cases. */
+export function resetFrSyncReportForTests(): void {
+  lastFrSyncReport = null;
 }
 
 const FR_KINDS = ["rule_effective", "rule_expiry", "comment_close", "presidential_action", "regulatory_decision"] as const;
@@ -57,12 +61,22 @@ export async function syncFederalRegister(
     log?: (m: string) => void;
     sleep?: (ms: number) => Promise<void>;
     curatedDocNumbers?: Set<string>;
+    curatedDocNumbersLoader?: () => Promise<Set<string>>;
   },
 ): Promise<void> {
   const fetchImpl = opts.fetch ?? fetch;
-  const curatedDocNumbers = opts.curatedDocNumbers ?? (await curatedFrDocNumbers());
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const log = opts.log ?? (() => {});
+  // Fail closed: without the curated set we cannot tell duplicates from real rows, so abort before any fetch/write.
+  let curatedDocNumbers: Set<string>;
+  try {
+    curatedDocNumbers = opts.curatedDocNumbers ?? (opts.curatedDocNumbersLoader ? await opts.curatedDocNumbersLoader() : await curatedFrDocNumbers());
+  } catch (err) {
+    const message = errorMessage(err);
+    log(`federal register abort: curated doc numbers unavailable: ${message}`);
+    lastFrSyncReport = { at: new Date().toISOString(), complete: false, count: 0, drops: [], skippedCurated: [], noOperativeMarker: [], queries: [], curatedError: message };
+    return;
+  }
   const runStart = new Date().toISOString();
   const dropReasons = new Map<string, string>();
   const end = horizonEnd(opts.today, opts.horizonDays);

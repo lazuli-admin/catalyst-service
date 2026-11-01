@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { curatedFrDocNumbers, frDocNumbersFromEvents, syncPolicyEvents } from "../src/catalysts/policy.js";
 import type { Catalyst } from "../src/types.js";
@@ -26,8 +29,19 @@ describe("frDocNumbersFromEvents", () => {
     expect(nums.has("2025-21671")).toBe(true);
   });
 
-  it("never throws on a missing file; returns an empty set", async () => {
-    await expect(curatedFrDocNumbers("data/definitely-missing.json")).resolves.toEqual(new Set());
+  it("fails closed: rejects on a nonexistent path (including ENOENT)", async () => {
+    await expect(curatedFrDocNumbers("data/definitely-missing.json")).rejects.toThrow();
+  });
+
+  it("fails closed: rejects on invalid JSON", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "policy-bad-"));
+    const file = path.join(dir, "policy-events.json");
+    await writeFile(file, "{ not json", "utf8");
+    try {
+      await expect(curatedFrDocNumbers(file)).rejects.toThrow();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -631,3 +631,33 @@ describe("fr-classify date precision", () => {
     expect(rows[0]!.dateSource).toBe("text");
   });
 });
+
+describe("fr-classify comment-deadline filter", () => {
+  // Mutation-killer: without the `if (/\bcomments?\b/i.test(sentence)) continue;` guard in roleDates,
+  // the comment sentence would add a second (expiry) role date alongside the effective date.
+  const operative = "This rule is effective December 1, 2026. Comments must be received by December 15, 2026, and the comment period remains in force until December 15, 2026.";
+
+  it("roleDates: a comment-deadline sentence in operative text adds no second role date", () => {
+    const rows = roleDates(operative);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ date: "2026-12-01", role: "effective", raw: "effective December 1, 2026" });
+  });
+
+  it("classify: one rule_effective row, precision exact, no comment-date role", () => {
+    const rows = classify({
+      title: "Example product rule",
+      type: "Rule",
+      subtype: null,
+      abstract: null,
+      dates: operative,
+      effective_on: null,
+      comments_close_on: null,
+      document_number: "T-CD-1",
+      html_url: "https://example.com/d/T-CD-1",
+      agencyLabel: "BIS",
+      bodyText: null,
+    }, WINDOW);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ kind: "rule_effective", role: "effective", date: "2026-12-01", datePrecision: "exact", dateSource: "text" });
+  });
+});
