@@ -64,7 +64,7 @@ async function main(): Promise<void> {
   const deps = createDeps(config, store);
   const lock = createSyncLock((m) => deps.log?.(m));
 
-  const app = buildServer(store, deps);
+  const app = buildServer(store, deps, { lock, host: config.host });
   await app.listen({ port: config.port, host: config.host });
   deps.log?.(`listening on :${config.port} (db ${config.databaseUrl.split("?")[0]}, scorer ${deps.scorer.name})`);
 
