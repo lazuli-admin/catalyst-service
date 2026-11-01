@@ -4,6 +4,7 @@ import type { Catalyst } from "../types.js";
 import { catalystDedupeKey } from "./extract.js";
 import { syncPrimaryMacro } from "./macro-primary.js";
 import { syncElections, syncFederalRegister } from "./federal-register.js";
+import { syncPolicyEvents } from "./policy.js";
 import { errorMessage } from "../util.js";
 
 const NASDAQ_HEADERS = {
@@ -40,8 +41,8 @@ async function fetchJson(url: string, fetchImpl: typeof fetch): Promise<unknown>
 }
 
 export async function syncCalendars(
-  store: Pick<Store, "upsertCatalyst" | "purgeLegacyMacro" | "purgeStaleCatalysts">,
-  opts: { from: string; days: number; watchlist: string[]; minMarketCap: number; fetch?: typeof fetch; log?: (m: string) => void },
+  store: Pick<Store, "upsertCatalyst" | "purgeLegacyMacro" | "purgeStaleCatalysts" | "purgeByKeyPrefixExcept">,
+  opts: { from: string; days: number; policyHorizonDays?: number; watchlist: string[]; minMarketCap: number; fetch?: typeof fetch; log?: (m: string) => void },
 ): Promise<{ earnings: number; macro: number }> {
   const fetchImpl = opts.fetch ?? fetch;
   const log = opts.log ?? (() => {});
@@ -59,7 +60,10 @@ export async function syncCalendars(
     log(`calendars failed: ${errorMessage(err)}`);
   }
   counts.macro = await syncPrimaryMacro(store, { today: opts.from, horizonDays: opts.days, fetch: fetchImpl, log });
-  await syncFederalRegister(store, { today: opts.from, horizonDays: opts.days, fetch: fetchImpl, log });
+  // Policy horizon is longer than the earnings/macro horizon: proclamations and trials land months out.
+  const policyHorizon = opts.policyHorizonDays ?? 180;
+  await syncFederalRegister(store, { today: opts.from, horizonDays: policyHorizon, fetch: fetchImpl, log });
+  await syncPolicyEvents(store, { today: opts.from, horizonDays: policyHorizon, log });
   await syncElections(store, { today: opts.from, horizonDays: opts.days });
   return counts;
 }

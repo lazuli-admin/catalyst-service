@@ -22,7 +22,10 @@ export const PINNED_MACRO: RegExp[] = [
   /initial jobless claims/i,
 ];
 
-const isPinned = (c: Catalyst) => c.kind === "election" || (c.kind === "macro" && PINNED_MACRO.some((re) => re.test(c.title)));
+const isPinned = (c: Catalyst) =>
+  c.kind === "election" ||
+  (c.kind === "macro" && PINNED_MACRO.some((re) => re.test(c.title))) ||
+  (c.dedupeKey.startsWith("policy:") && (c.impactWeight ?? 0) >= 3);
 
 /** Same precision bar as density: exact dates or windows of <=10 trading days. */
 export function isPrecise(c: Catalyst): boolean {
@@ -61,8 +64,10 @@ export function rankCatalysts(cats: Catalyst[], opts: { asOf: string; all?: bool
       const focus = (c.ticker !== null && watch.has(c.ticker)) || c.affectedTickers.some((t) => watch.has(t));
       const pinned = isPinned(c);
       const im = c.kind === "earnings" ? opts.impliedMove?.[c.ticker ?? ""] : undefined;
-      // Lead-time multiplier removed (badges dropped as unverifiable); pinned macro/elections carry weight 3.
-      let score = (pinned ? 3 : KIND_WEIGHTS[c.kind]) * certainty(c) * c.confidence;
+      // Lead-time multiplier removed (badges dropped as unverifiable); pinned macro/elections/policy carry weight 3.
+      // Non-macro kinds trust the file-measured impactWeight over the static kind table.
+      const base = pinned ? 3 : c.kind === "macro" ? KIND_WEIGHTS[c.kind] : (c.impactWeight ?? KIND_WEIGHTS[c.kind]);
+      let score = base * certainty(c) * c.confidence;
       if (focus || pinned) score *= 2;
       if (im != null) score *= Math.min(3, Math.max(0.5, im / 0.05));
       return {
