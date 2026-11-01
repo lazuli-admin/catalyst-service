@@ -96,8 +96,13 @@ describe("syncFederalRegister", () => {
       ["Dual rule on integrated circuits", "2026-11-06"],
       ["BIS: rule back in force Nov 10 (suspension ends Nov 9) — Dual rule on integrated circuits", "2026-11-10"],
       ["Dup rule for a foundry", "2026-11-07"],
+      ["Dup rule for a foundry", "2026-11-06"],
     ]);
     expect(rows.every((r) => r.dedupeKey.startsWith("fr:"))).toBe(true);
+    const abstractRow = rows[rows.length - 1]!;
+    expect(abstractRow.datePrecision).toBe("estimated");
+    const apiRow = rows.find((r) => r.dateStart === "2026-11-07");
+    expect(apiRow?.datePrecision).toBe("exact");
   });
 
   it("FCC: only spectrum/broadband/satellite/net-neutrality/merger rules are kept", async () => {
