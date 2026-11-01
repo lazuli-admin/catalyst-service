@@ -219,7 +219,7 @@ describe("default view gating", () => {
   });
 
   it("not fomc: Fed-adjacent titles without a rate/policy decision are macro_other", () => {
-    for (const title of ["Powell speech at Brookings", "Fed Beige Book", "Fed stress test results", "Atlanta Fed GDPNow update", "FedEx earnings"]) {
+    for (const title of ["Powell speech at Brookings", "Fed Beige Book", "Fed stress test results", "Atlanta Fed GDPNow update", "FedEx earnings", "FedEx freight rate decision", "FedEx earnings: fuel surcharge policy decision"]) {
       expect(macroSeries({ dedupeKey: "x", title })).not.toBe("fomc");
     }
   });
