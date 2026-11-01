@@ -118,10 +118,10 @@
   },
   {
    "id": "s301-china-exclusions-end",
-   "date": "2026-11-09",
-   "dateEnd": "2026-11-09",
+   "date": "2026-11-10",
+   "dateEnd": "2026-11-10",
    "precision": "exact",
-   "title": "Section 301 China: extended product exclusions expire 11:59 p.m. ET unless extended (USTR notice, FR 2025-21671)",
+   "title": "Section 301 China: extended product exclusions no longer in force from Nov 10 unless extended (expired 11:59 p.m. ET Nov 9; USTR notice, FR 2025-21671)",
    "kind": "rule_effective",
    "sourceUrl": "https://www.federalregister.gov/documents/2025/12/01/2025-21671/notice-of-product-exclusion-extensions-chinas-acts-policies-and-practices-related-to-technology",
    "themes": [

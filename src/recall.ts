@@ -2,6 +2,8 @@
 // the sync queries + topic filter actually admit. Pure, no I/O — see scripts/recall.ts.
 // fr-blind-1 is now a REGRESSION set (topic fixes in test/topics-regression.test.ts were
 // informed by it), not a blind holdout.
+// fr-blind-2 (test/fixtures/fr-blind-2.json, seed-7 draw) is ALSO a REGRESSION set, not a
+// blind holdout, since it may have informed topic tuning.
 import { FR_AGENCIES, NOTICE_AGENCY_LABELS } from "./catalysts/federal-register.js";
 import { isRelevant } from "./topics.js";
 

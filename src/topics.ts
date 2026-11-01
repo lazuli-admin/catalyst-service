@@ -156,7 +156,7 @@ export const TOPICS: Topic[] = [
   {
     id: "trade-remedy",
     label: "Trade remedies (AD/CVD)",
-    patterns: [/affirmative (preliminary |final )?(determination|countervailing)|sales at less than fair value|antidumping duty order|countervailing duty order|antidumping and countervailing duty orders/i],
+    patterns: [/(negative|affirmative) (preliminary |final )?(countervailing (duty )?)?determination|affirmative (preliminary |final )?countervailing|initiation of (less[- ]than[- ]fair[- ]value|countervailing duty|antidumping duty) investigations?|sales at less than fair value|not being, or not likely to be, sold at less than fair value|antidumping duty order|countervailing duty order|antidumping and countervailing duty orders/i],
     themes: ["trade remedies"],
     // tickers are hand-curated, illustrative (rebar/steel, solar, trailers)
     affectedTickers: ["NUE", "STLD", "CMC", "FSLR", "WNC"],
@@ -164,7 +164,7 @@ export const TOPICS: Topic[] = [
   {
     id: "swaps-margining",
     label: "Swaps & margining",
-    patterns: [/\bswaps?\b|security-based swap|portfolio margin|cross-margin|clearing agenc/i],
+    patterns: [/(?<!debt[- ]for[- ]nature )\bswaps?\b|security-based swap|portfolio margin|cross-margin|clearing requirement determinations?|clearing agenc/i],
     themes: ["derivatives markets"],
     // tickers are hand-curated, illustrative
     affectedTickers: ["CME", "ICE", "CBOE", "GS", "MS"],
@@ -172,7 +172,7 @@ export const TOPICS: Topic[] = [
   {
     id: "submarine-cables",
     label: "Submarine cables & network security",
-    patterns: [/submarine cable|undersea cable|cable landing/i],
+    patterns: [/(submarine|undersea|subsea) cables?|cable landing/i],
     themes: ["submarine cables"],
     // tickers are hand-curated, illustrative
     affectedTickers: ["GLW", "CIEN", "META", "GOOGL"],
@@ -180,9 +180,18 @@ export const TOPICS: Topic[] = [
   {
     id: "usmca-trade-agreements",
     label: "USMCA / trade agreements",
-    patterns: [/\bUSMCA\b|United States-Mexico-Canada|agreement between the united states of america, the united mexican states, and canada|free trade agreement/i],
+    // bare "free trade agreement" also hit routine rules-of-origin / textile notices (e.g. Bahrain, CAFTA-DR); require a material action
+    patterns: [/\bUSMCA\b|united states[-–—]mexico[-–—]canada|u\.?s\.?[-–—]mexico[-–—]canada|agreement between the united states of america, the united mexican states, and canada|(negotiat|implement|terminat|withdraw|suspen|renegotiat|modif)\w*[^.]{0,60}free trade agreement|free trade agreement[^.]{0,60}(negotiat|terminat|withdraw|suspen|joint review)/i],
     themes: ["trade agreements"],
     affectedTickers: [],
+  },
+  {
+    id: "foreign-issuer-disclosure",
+    label: "Foreign issuer disclosure",
+    patterns: [/holding foreign (insiders|companies) accountable|\bHFCAA\b|foreign private issuers?/i],
+    themes: ["foreign issuer disclosure"],
+    // tickers are hand-curated, illustrative (US-listed foreign private issuers)
+    affectedTickers: ["BABA", "PDD", "JD", "BIDU", "NIO"],
   },
   {
     id: "china-trade",
@@ -221,6 +230,8 @@ export const NOISE_PATTERNS: RegExp[] = [
   /privacy act of 1974/i,
   /advisory committee/i,
   /performance review board/i,
+  // drops routine FTA textile short-supply / commercial-availability procedural notices (e.g. CAFTA-DR)
+  /short[- ]supply|commercial availability/i,
 ];
 
 export interface FrDoc {
