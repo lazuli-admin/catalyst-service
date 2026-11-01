@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ELECTIONS, FR_AGENCIES, syncElections, syncFederalRegister } from "../src/catalysts/federal-register.js";
+import { ELECTIONS, FR_AGENCIES, keepCommentClose, syncElections, syncFederalRegister } from "../src/catalysts/federal-register.js";
 import type { Catalyst } from "../src/types.js";
 
 const res = (body: unknown, ok = true) => ({ ok, status: ok ? 200 : 500, json: async () => body });
@@ -63,7 +63,7 @@ describe("syncFederalRegister", () => {
       [BIS]: {
         results: [
           { title: "Future semiconductor rule", effective_on: "2026-11-05", html_url: "https://x/1", abstract: "", document_number: "doc-1" },
-          { title: "Dual rule on integrated circuits", effective_on: "2026-11-06", html_url: "https://x/2", abstract: "ends November 9, 2026", document_number: "doc-2" },
+          { title: "Dual rule on integrated circuits", effective_on: "2026-11-06", html_url: "https://x/2", abstract: "suspension ends November 9, 2026", document_number: "doc-2" },
           { title: "Dup rule for a foundry", effective_on: "2026-11-07", html_url: "https://x/3", abstract: "expires November 6, 2026", document_number: "doc-3" },
         ],
       },
@@ -156,6 +156,52 @@ describe("syncFederalRegister", () => {
     expect([kind, from, keyPrefix]).toEqual(["rule_effective", opts.today, "fr:"]);
     expect(before >= started && before <= new Date().toISOString()).toBe(true);
     expect(s.purgeStaleCatalysts.mock.calls[1]).toEqual(["regulatory_decision", opts.today, expect.any(String), "fr:"]);
+  });
+});
+
+describe("federal register noise filters", () => {
+  it("skips correction documents (C1-, C2-)", async () => {
+    const fetchImpl = mockFetch({
+      [FTC]: {
+        results: [
+          { title: "Merger Rule Corrections", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "C1-2026-11111" },
+          { title: "Merger Rule", effective_on: "2026-11-06", html_url: "u", abstract: "", document_number: "2026-22222" },
+        ],
+      },
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
+    expect(catalysts(s).map((r) => r.title)).toEqual(["Merger Rule"]);
+  });
+
+  it("USTR 'Request for Comments ...' with a 'through' abstract gets no back-in-force event", async () => {
+    const USTR = "trade-representative-office-of-united-states";
+    const fetchImpl = mockFetch({
+      [USTR]: {
+        results: [
+          {
+            title: "Request for Comments on Tariff Exclusions",
+            effective_on: null,
+            html_url: "u",
+            abstract: "The comment period runs through December 31, 2026.",
+            document_number: "2026-33333",
+          },
+        ],
+      },
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
+    expect(catalysts(s)).toEqual([]);
+  });
+
+  it("keepCommentClose", () => {
+    expect(keepCommentClose("SEC", "Transfer Agent Rules")).toBe(false);
+    expect(keepCommentClose("SEC", "Proxy Solicitation Modernization")).toBe(true);
+    expect(keepCommentClose("FTC", "Petition for Rulemaking of X")).toBe(false);
+    expect(keepCommentClose("ITA", "Subsidy Programs on Softwood Lumber")).toBe(false);
+    expect(keepCommentClose("ITA", "Section 232 Auto Parts Investigation")).toBe(true);
+    expect(keepCommentClose("USTR", "Anything At All")).toBe(true);
+    expect(keepCommentClose("FTC", "Merger Filing Requirements")).toBe(true);
   });
 });
 

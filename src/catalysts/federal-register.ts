@@ -34,6 +34,26 @@ export const FCC_TITLE_RE = /spectrum|broadband|net neutrality|satellite|merger/
 /** BIS rules outside these topics (e.g. silencers/mufflers export controls) are noise. */
 export const SEMI_TOPIC_RE = /semiconductor|advanced comput|integrated circuit|entity list|affiliat|end-user|artificial intelligence|supercomput|foundry|\bchips?\b/i;
 
+/** Comment-close noise filter: drop boilerplate petitions/review lists, then per-agency topic keep-lists. */
+export function keepCommentClose(agencyLabel: string, title: string): boolean {
+  if (/^(petition for rulemaking|list of rules to be reviewed)/i.test(title)) return false;
+  switch (agencyLabel) {
+    case "USTR":
+    case "BIS":
+    case "CBP":
+    case "FCC":
+      return true;
+    case "ITA":
+      return /section 232/i.test(title);
+    case "SEC":
+      return /crypto|digital asset|proxy|14a-8|shareholder proposal|market structure|short sale|climate/i.test(title);
+    case "FTC":
+      return /merger|premerger|hart-scott|non-?compete/i.test(title);
+    default:
+      return true;
+  }
+}
+
 /** Fixed-date political events. */
 export const ELECTIONS: { date: string; title: string }[] = [
   { date: "2026-11-03", title: "US midterm elections" },
@@ -100,6 +120,7 @@ export async function syncFederalRegister(
         const htmlUrl = typeof row.html_url === "string" ? row.html_url : null;
         const abstract = typeof row.abstract === "string" ? row.abstract : "";
         if (!title || !documentNumber) continue;
+        if (/^C\d-/.test(documentNumber)) continue; // correction documents are noise
         if (agency.label === "FCC" && !FCC_TITLE_RE.test(title)) continue;
         if (agency.label === "BIS" && !SEMI_TOPIC_RE.test(`${title} ${abstract}`)) continue;
         if (agency.label === "USTR" || agency.label === "ITA" || agency.label === "CBP") {
@@ -113,7 +134,9 @@ export async function syncFederalRegister(
         if (typeof row.effective_on === "string" && /^\d{4}-\d{2}-\d{2}$/.test(row.effective_on) && inWindow(row.effective_on)) {
           candidates.push({ date: row.effective_on, isEnd: false });
         }
-        const abstractEnd = parseAbstractEndDate(abstract);
+        const abstractEnd = /suspen|pause/i.test(abstract) && !/^(request for comments|applications for)/i.test(title)
+          ? parseAbstractEndDate(abstract)
+          : null;
         if (abstractEnd) {
           const next = new Date(Date.parse(`${abstractEnd}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
           if (inWindow(next)) candidates.push({ date: next, isEnd: true });
@@ -143,7 +166,7 @@ export async function syncFederalRegister(
           });
         }
         const commentsOn = typeof row.comments_close_on === "string" && /^\d{4}-\d{2}-\d{2}$/.test(row.comments_close_on) ? row.comments_close_on : null;
-        if (commentsOn && inWindow(commentsOn)) {
+        if (commentsOn && inWindow(commentsOn) && keepCommentClose(agency.label, title)) {
           await store.upsertCatalyst({
             ticker: null,
             title: `${agency.label} comments close: ${title}`,
