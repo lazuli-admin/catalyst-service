@@ -11,6 +11,9 @@ const NASDAQ_HEADERS = {
 };
 const TIMEOUT_MS = 15_000;
 
+/** Market cap at or above which an earnings catalyst is tagged "megacap". */
+export const MEGACAP_MIN = 200e9;
+
 // Market-cap strings like "$253,966,172,000".
 function parseMarketCap(raw: unknown): number {
   if (typeof raw !== "string") return 0;
@@ -66,7 +69,8 @@ async function syncEarningsDay(
       const symbol = typeof row.symbol === "string" ? row.symbol.toUpperCase() : null;
       const name = typeof row.name === "string" ? row.name : null;
       if (!symbol || !name) continue;
-      if (!ctx.watch.has(symbol) && parseMarketCap(row.marketCap) < ctx.minMarketCap) continue;
+      const marketCap = parseMarketCap(row.marketCap);
+      if (!ctx.watch.has(symbol) && marketCap < ctx.minMarketCap) continue;
       await upsert(store, {
         ticker: symbol,
         title: `${name} earnings (${timeLabel(row.time)})`,
@@ -75,7 +79,7 @@ async function syncEarningsDay(
         dateStart: date,
         dateEnd: date,
         confidence: 0.95,
-        themes: [],
+        themes: marketCap >= MEGACAP_MIN ? ["megacap"] : [],
         affectedTickers: [],
       });
       ctx.counts.earnings++;

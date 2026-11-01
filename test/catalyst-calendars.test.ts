@@ -44,6 +44,8 @@ describe("syncCalendars", () => {
     expect(titles.some((t) => t.includes("Purchasing Managers"))).toBe(false);
     const tickers = s.upsertCatalyst.mock.calls.map(([c]) => (c as { ticker: string | null }).ticker);
     expect(tickers).toEqual(["SMOL", "BIGC", null]);
+    const themes = s.upsertCatalyst.mock.calls.map(([c]) => (c as { themes: string[] }).themes);
+    expect(themes).toEqual([[], ["megacap"], ["macro"]]);
     // Mon-Fri = 3 fetch pairs (Sat/Sun skipped); watch for date correctness
     const urls = fetchImpl.mock.calls.map(([u]) => String(u));
     expect(urls.some((u) => u.includes("date=2026-02-12"))).toBe(true);
@@ -68,6 +70,17 @@ describe("syncCalendars", () => {
     const rows = s.upsertCatalyst.mock.calls.map(([c]) => c as { title: string; dedupeKey: string });
     expect(rows.map((r) => r.title).sort()).toEqual(["US CPI", "US ISM Manufacturing"]);
     expect(rows.every((r) => r.dedupeKey === `macro:${r.title}:2026-02-12`)).toBe(true);
+  });
+
+  it("tags megacap theme at the 200e9 boundary", async () => {
+    const earnings = { data: { rows: [
+      { symbol: "ATB", name: "At Boundary Inc", marketCap: "$200,000,000,000", time: "time-pre-market" },
+      { symbol: "UNDER", name: "Just Under Inc", marketCap: "$199,999,999,999", time: "time-pre-market" },
+    ] } };
+    const s = store();
+    await syncCalendars(s, { ...opts, fetch: mockFetch(earnings, { data: { rows: null } }) as unknown as typeof fetch });
+    const themes = s.upsertCatalyst.mock.calls.map(([c]) => (c as { themes: string[] }).themes);
+    expect(themes).toEqual([["megacap"], []]);
   });
 
   it("tolerates null rows", async () => {
