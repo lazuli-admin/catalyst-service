@@ -6,6 +6,7 @@ import { catalystDedupeKey } from "./extract.js";
 import { acceptCatalyst, sourceTier } from "./credibility.js";
 import { googleNewsAdapter } from "../sources/google-news.js";
 import { errorMessage } from "../util.js";
+import { nyDate } from "../clock.js";
 
 export const DEFAULT_WATCHLIST = ["AAPL", "TSLA", "MSFT"];
 
@@ -41,7 +42,7 @@ export async function runProspect(deps: ProspectDeps, opts: { watchlist: string[
   const { store, extractor, log, now } = deps;
   const fetchImpl = deps.fetch ?? globalThis.fetch;
   const userAgent = deps.userAgent ?? "catalyst-service prospect";
-  const today = (now?.() ?? new Date()).toISOString().slice(0, 10);
+  const today = nyDate(now?.() ?? new Date());
   const queries = prospectQueries(opts.watchlist, opts.themes);
 
   const allItems: RawItem[] = [];

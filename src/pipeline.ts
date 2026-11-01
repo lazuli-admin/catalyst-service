@@ -10,6 +10,7 @@ import {
   type AlertPolicy,
 } from "./alerts.js";
 import type { NtfyConfig } from "./config.js";
+import { nyDate, type Clock } from "./clock.js";
 import { acceptCatalyst, sourceTier } from "./catalysts/credibility.js";
 import { catalystDedupeKey, type ExtractedCatalyst } from "./catalysts/extract.js";
 import type { PillarEvidence, Store } from "./db.js";
@@ -41,6 +42,8 @@ export interface PipelineDeps {
   };
   /** Batched pre-screen for sources with `triage: true`; without it their items all get the full judgment. */
   triage?: Triage;
+  /** Injectable time source (ET "today" derives from this); defaults to the system clock. */
+  clock?: Clock;
   /** Event grouping; without it, items are judged one by one as before. */
   events?: EventIndex;
   sourceContext: SourceContext;
@@ -74,7 +77,7 @@ async function mineCatalysts(deps: PipelineDeps, observation: Observation, judgm
   if (!FUTURE_SIGNAL_RE.test(text)) return;
   const tier = sourceTier({ url: observation.url, title: observation.title });
   if (tier === 3) return; // unverified source: skip the LLM call entirely
-  const today = (deps.now ?? (() => new Date()))().toISOString().slice(0, 10);
+  const today = nyDate((deps.now ?? (() => new Date()))());
   try {
     const extracted = await catalysts.extract({ title: observation.title, summary: observation.summary, url: observation.url, publishedAt: observation.publishedAt });
     for (const c of extracted) {

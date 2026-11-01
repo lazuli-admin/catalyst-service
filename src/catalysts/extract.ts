@@ -1,4 +1,5 @@
 import type { Catalyst, CatalystKind, CatalystStatus, DatePrecision } from "../types.js";
+import { nyDate } from "../clock.js";
 import { clamp01, errorMessage } from "../util.js";
 
 // sourceTier is derived from the source URL, not the model output; it is attached at upsert time.
@@ -88,14 +89,14 @@ export function createCatalystExtractor(llm: { apiKey: string; baseUrl: string; 
             ...(llm.maxTokens ? { max_tokens: llm.maxTokens } : {}),
             response_format: { type: "json_object" },
             messages: [
-              { role: "system", content: `${SYSTEM_PROMPT}\nToday is ${now().toISOString().slice(0, 10)}.` },
+              { role: "system", content: `${SYSTEM_PROMPT}\nToday is ${nyDate(now())}.` },
               { role: "user", content: JSON.stringify({ title: item.title, summary: item.summary ?? "", url: item.url ?? null, publishedAt: item.publishedAt ?? null }) },
             ],
           }),
         });
         if (!res.ok) return [];
         const body = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-        return sanitizeCatalysts(JSON.parse(body.choices?.[0]?.message?.content ?? ""), now().toISOString().slice(0, 10));
+        return sanitizeCatalysts(JSON.parse(body.choices?.[0]?.message?.content ?? ""), nyDate(now()));
       } catch (err) {
         console.error(`[catalyst-extract] ${errorMessage(err)}`);
         return [];

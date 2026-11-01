@@ -49,7 +49,7 @@ describe("createCatalystExtractor", () => {
   const llm = { apiKey: "k", baseUrl: "http://x/", model: "m" };
   it("happy path: quarter window resolved by LLM, sanitized", async () => {
     const fetchImpl = vi.fn(async () => jsonRes(JSON.stringify({ catalysts: [{ ticker: "nvda", kind: "earnings", title: "Q1 2027 report", status: "confirmed", dateStart: "2027-02-15", dateEnd: "2027-03-31", confidence: 0.8, themes: ["AI"], affectedTickers: ["amd"] }] })));
-    const { extract } = createCatalystExtractor(llm, { fetch: fetchImpl as unknown as typeof fetch, now: () => new Date("2026-02-10T00:00:00Z") });
+    const { extract } = createCatalystExtractor(llm, { fetch: fetchImpl as unknown as typeof fetch, now: () => new Date("2026-02-10T17:00:00Z") });
     const out = await extract({ title: "Nvidia schedules next report" });
     expect(out).toEqual([{ ticker: "NVDA", kind: "earnings", title: "Q1 2027 report", status: "confirmed", dateStart: "2027-02-15", dateEnd: "2027-03-31", datePrecision: "window", confidence: 0.8, themes: ["ai"], affectedTickers: ["AMD"] }]);
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
@@ -61,7 +61,7 @@ describe("createCatalystExtractor", () => {
   });
   it("drops fully past-dated windows", async () => {
     const fetchImpl = vi.fn(async () => jsonRes(JSON.stringify({ catalysts: [{ title: "old", kind: "earnings", dateStart: "2026-01-01", dateEnd: "2026-01-31" }] })));
-    const { extract } = createCatalystExtractor(llm, { fetch: fetchImpl as unknown as typeof fetch, now: () => new Date("2026-02-10T00:00:00Z") });
+    const { extract } = createCatalystExtractor(llm, { fetch: fetchImpl as unknown as typeof fetch, now: () => new Date("2026-02-10T17:00:00Z") });
     expect(await extract({ title: "x" })).toEqual([]);
   });
   it("malformed JSON and non-2xx return []", async () => {

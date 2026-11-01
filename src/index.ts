@@ -4,6 +4,7 @@ import { createCatalystExtractor } from "./catalysts/extract.js";
 import { DEFAULT_THEMES, DEFAULT_WATCHLIST, runProspect } from "./catalysts/prospect.js";
 import { maybeSendDigest } from "./digest.js";
 import { runDueSources, type PipelineDeps } from "./pipeline.js";
+import { marketToday, systemClock } from "./clock.js";
 import { createLocalEmbedder, EventIndex, warmEventMemory } from "./events.js";
 import { createLlmFreshness, createPublisherReader } from "./freshness.js";
 import { addPresetPillars, DEFAULT_SOURCES, PRESET_PILLARS, PRESET_THEMES, PRESET_TRADES, RETIRED_SOURCES } from "./presets.js";
@@ -71,7 +72,7 @@ async function main(): Promise<void> {
   const calendarHorizonDays = Number(process.env.CALENDAR_HORIZON_DAYS ?? 45);
   const policyHorizonDays = Number(process.env.POLICY_HORIZON_DAYS ?? 180);
   const syncCalendarsNow = () => {
-    void syncCalendars(store, { from: new Date().toISOString().slice(0, 10), days: calendarHorizonDays, policyHorizonDays, watchlist, minMarketCap, log: (m) => deps.log?.(`[calendars] ${m}`) });
+    void syncCalendars(store, { from: marketToday(deps.clock ?? systemClock), days: calendarHorizonDays, policyHorizonDays, watchlist, minMarketCap, log: (m) => deps.log?.(`[calendars] ${m}`) });
   };
   if (process.env.NODE_ENV !== "test") {
     syncCalendarsNow();
