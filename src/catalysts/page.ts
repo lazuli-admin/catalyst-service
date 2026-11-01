@@ -20,7 +20,7 @@ export function weekSunday(date: string): string {
   return new Date(t - new Date(t).getUTCDay() * 86_400_000).toISOString().slice(0, 10); // clock-guard: pure-date
 }
 
-type Ranked = Catalyst & { score: number; focus?: boolean; pinned?: boolean };
+type Ranked = Catalyst & { score: number; focus?: boolean };
 
 /** Canonical query string: week, all=1, hide=<sorted> in that order; "?" alone when all empty. */
 const href = (p: { week?: string; all: boolean; hide: string[] }) =>
@@ -30,7 +30,7 @@ function chip(r: Ranked, asOf: string): string {
   const href = safeHref(r.sourceUrl);
   const source = href ? ` <a href="${href}" target="_blank" rel="noopener">source</a>` : "";
   const kind = r.kind === "earnings" ? "k-earnings" : r.kind === "macro" ? "k-macro" : r.kind === "election" ? "k-election" : "k-other";
-  const flag = `${r.focus ? "★" : ""}${r.pinned ? " 📌" : ""}`;
+  const flag = `${r.focus ? "★" : ""}`;
   const name = r.ticker ? `<strong>${esc(r.ticker)}</strong> ` : "";
   const n = (Date.parse(`${r.dateStart}T00:00:00Z`) - Date.parse(`${asOf}T00:00:00Z`)) / 86_400_000;
   const until = n === 0 ? "today" : `in ${n}d`;

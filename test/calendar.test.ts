@@ -147,7 +147,6 @@ describe("renderCalendarPage", () => {
     expect(html).toContain('class="chip k-election"');
     expect(html).toContain('class="chip k-other"');
     expect(html).toContain("★");
-    expect(html).toContain("📌");
     expect(html).not.toContain("<b>");
     expect(html).not.toContain("EVIL&<>");
     expect(html).toContain("EVIL&amp;&lt;&gt;");

@@ -1,4 +1,5 @@
 import type { Catalyst, CatalystKind, DatePrecision } from "../types.js";
+import { scoreEvent, certaintyOf } from "../scoring/importance.js";
 
 /** Weight by kind tier: 3 = market-moving decisions, 2 = structural supply/index events, 1 = informational. */
 export const KIND_WEIGHTS: Record<CatalystKind, 1 | 2 | 3> = {
@@ -41,6 +42,8 @@ export type TickerDensityItem = {
   catalyst: Catalyst;
   /** weight * certainty * lead-time, before cluster bonus */
   score: number;
+  /** importance x certainty x confidence, before lead-time/cluster adjustments */
+  baseScore: number;
   bucket: LeadBucket;
 };
 
@@ -71,12 +74,7 @@ export function leadBucket(dateStart: string, asOf: string): LeadBucket {
 }
 
 export function certainty(c: Catalyst): number {
-  if (c.datePrecision === "exact") return PRECISION_MULTIPLIER.exact;
-  if (c.datePrecision === "window") {
-    const width = tradingDaysBetween(c.dateStart, c.dateEnd);
-    return width <= 10 ? PRECISION_MULTIPLIER.window : WIDE_WINDOW_MULTIPLIER;
-  }
-  return PRECISION_MULTIPLIER.estimated;
+  return certaintyOf(c);
 }
 
 /** Policy catalysts cluster only with other policy catalysts: dedupeKey prefix or litigation kind. */
@@ -96,7 +94,8 @@ export function catalystDensity(
     // Past events no longer move prices.
     if (Date.parse(c.dateEnd) < Date.parse(opts.asOf)) continue;
     const bucket = leadBucket(c.dateStart, opts.asOf);
-    const base = KIND_WEIGHTS[c.kind] * certainty(c) * LEAD_MULTIPLIERS[bucket] * c.confidence;
+    const baseScore = scoreEvent(c);
+    const base = baseScore * LEAD_MULTIPLIERS[bucket];
     // Dedupe: an affectedTicker equal to the main ticker counts only once, at full weight.
     const targets = new Map<string, number>([...(c.ticker ? [[c.ticker, 1] as const] : []), ...c.affectedTickers.map((t) => [t, 0.5] as const)]);
     for (const [ticker, share] of targets) {
@@ -104,7 +103,7 @@ export function catalystDensity(
       // Macro/election read through as 2x for rate-policy-sensitive tickers.
       const rateBoost = (c.kind === "macro" || c.kind === "election") && sensitive.has(ticker) ? 2 : 1;
       const itemScore = base * share * rateBoost;
-      entry.items.push({ catalyst: c, score: itemScore, bucket });
+      entry.items.push({ catalyst: c, score: itemScore, baseScore, bucket });
       if (bucket === "actionable") entry.actionableScore += itemScore;
       byTicker.set(ticker, entry);
     }

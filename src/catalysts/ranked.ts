@@ -1,31 +1,18 @@
-import { certainty, KIND_WEIGHTS, leadBucket, tradingDaysBetween, type LeadBucket } from "./density.js";
+import { leadBucket, tradingDaysBetween, type LeadBucket } from "./density.js";
+import { scoreEvent, importanceOf, classifyEvent, DEFAULT_VIEW_MIN_SCORE, type EventClass } from "../scoring/importance.js";
 import type { Catalyst } from "../types.js";
 
 export interface RankedCatalyst extends Catalyst {
   score: number;
+  importance: number;
+  eventClass: EventClass;
   bucket: LeadBucket;
   focus?: boolean;
-  pinned?: boolean;
   impliedMove?: number;
 }
 
 /** Focus tickers: names we always want promoted, boosted 2x. */
 export const FOCUS_WATCHLIST = ["NVDA", "AMD", "AVGO", "MSFT", "GOOGL", "AMZN", "META", "AAPL", "AMAT", "LRCX", "KLAC", "APP", "RDDT", "HUBS", "NOW", "TWLO", "DOCN", "ORCL", "MRVL", "LITE", "HOOD"];
-
-/** Macro releases that ride in the default view despite weight 1. */
-export const PINNED_MACRO: RegExp[] = [
-  /\bcpi\b|consumer price/i,
-  /\bpce\b|personal consumption/i,
-  /nonfarm|payrolls|jobs report|unemployment rate/i,
-  /\bjolts\b/i,
-  /\bfomc\b|fed interest rate|interest rate decision/i,
-  /initial jobless claims/i,
-];
-
-const isPinned = (c: Catalyst) =>
-  c.kind === "election" ||
-  (c.kind === "macro" && PINNED_MACRO.some((re) => re.test(c.title))) ||
-  (c.dedupeKey.startsWith("policy:") && (c.impactWeight ?? 0) >= 3);
 
 /** Same precision bar as density: exact dates or windows of <=10 trading days. */
 export function isPrecise(c: Catalyst): boolean {
@@ -53,29 +40,26 @@ export function rankCatalysts(cats: Catalyst[], opts: { asOf: string; all?: bool
   const ranked = cats
     .filter((c) => {
       if (opts.all) return true;
-      // Default view: decision-grade, precisely-dated upcoming events, plus pinned macro/elections.
+      // Default view: score-gated upcoming events.
       if (c.status === "lead" || c.status === "cancelled" || c.status === "done") return false;
       if (Date.parse(c.dateEnd) < Date.parse(opts.asOf)) return false;
-      if (isPinned(c)) return true;
-      return KIND_WEIGHTS[c.kind] >= 2 && isPrecise(c);
+      return scoreEvent(c) >= DEFAULT_VIEW_MIN_SCORE;
     })
     .map((c) => {
       const bucket = leadBucket(c.dateStart, opts.asOf);
       const focus = (c.ticker !== null && watch.has(c.ticker)) || c.affectedTickers.some((t) => watch.has(t));
-      const pinned = isPinned(c);
       const im = c.kind === "earnings" ? opts.impliedMove?.[c.ticker ?? ""] : undefined;
-      // Lead-time multiplier removed (badges dropped as unverifiable); pinned macro/elections/policy carry weight 3.
-      // Non-macro kinds trust the file-measured impactWeight over the static kind table.
-      const base = pinned ? 3 : c.kind === "macro" ? KIND_WEIGHTS[c.kind] : (c.impactWeight ?? KIND_WEIGHTS[c.kind]);
-      let score = base * certainty(c) * c.confidence;
-      if (focus || pinned) score *= 2;
+      // Lead-time multiplier removed (badges dropped as unverifiable).
+      let score = scoreEvent(c);
+      if (focus) score *= 2;
       if (im != null) score *= Math.min(3, Math.max(0.5, im / 0.05));
       return {
         ...c,
-        bucket,
         score,
+        importance: importanceOf(c),
+        eventClass: classifyEvent(c),
+        bucket,
         ...(focus ? { focus: true } : {}),
-        ...(pinned ? { pinned: true } : {}),
         ...(im != null ? { impliedMove: im } : {}),
       };
     });

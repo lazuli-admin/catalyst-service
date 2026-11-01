@@ -32,11 +32,12 @@ describe("rankCatalysts", () => {
   it("scores weight x certainty x confidence (no lead-time multiplier) and sorts by score desc then date", () => {
     const rows = rankCatalysts(
       [cat({ id: "a" }), cat({ id: "b", ticker: "AMD", title: "AMD earnings (Q1)", dateStart: "2026-03-20", dateEnd: "2026-03-24", datePrecision: "window", confidence: 0.5 }), cat({ id: "c", kind: "regulatory_decision" })],
-      { asOf: TODAY, watchlist: [] },
+      { asOf: TODAY, watchlist: [], all: true },
     );
-    expect(rows.map((r) => r.id)).toEqual(["a", "c", "b"]);
-    expect(rows[1]!.score).toBeCloseTo(3 * 1 * 1);
-    expect(rows[2]!.score).toBeCloseTo(3 * 0.7 * 0.5);
+    // earnings_large 4, corporate_major 5, window certainty 0.7 x confidence 0.5
+    expect(rows.map((r) => r.id)).toEqual(["c", "a", "b"]);
+    expect(rows[1]!.score).toBeCloseTo(4 * 1 * 1);
+    expect(rows[2]!.score).toBeCloseTo(4 * 0.7 * 0.5);
     expect(rows[1]!.bucket).toBe("actionable"); // kept for API compatibility only
   });
 
@@ -68,7 +69,7 @@ describe("rankCatalysts", () => {
     expect(focused[0]!.score).toBeCloseTo(rows.find((r) => !r.focus)!.score * 2);
   });
 
-  it("pinned macro and elections ride in the default view; other macro stays out", () => {
+  it("macro rides in the default view by score: CPI (8) and federal elections (6) clear the bar, unknown macro (1) stays out", () => {
     const rows = rankCatalysts(
       [
         cat({ ticker: null, kind: "macro", title: "US CPI release" }),
@@ -77,11 +78,13 @@ describe("rankCatalysts", () => {
       ],
       { asOf: TODAY, watchlist: [] },
     );
-    expect(rows.map((r) => r.title).sort()).toEqual(["US CPI release", "US midterm elections"]);
-    expect(rows.every((r) => r.pinned)).toBe(true);
+    // CPI 8, Retail Sales 4, election_federal 6 — all >= DEFAULT_VIEW_MIN_SCORE (2.0).
+    expect(rows.map((r) => r.title).sort()).toEqual(["US CPI release", "US Retail Sales", "US midterm elections"]);
+    expect(rankCatalysts([cat({ ticker: null, kind: "macro", title: "Michigan consumer sentiment" })], { asOf: TODAY, watchlist: [] })).toHaveLength(0); // macro_other 1 < 2
+    expect(rows.every((r) => !("pinned" in r))).toBe(true);
   });
 
-  it("pinned macro and elections get weight 3 then x2 boost; off-watchlist earnings stay at 3", () => {
+  it("macro rows score by event class (no pin boost, no impactWeight override); off-watchlist earnings at class weight", () => {
     const rows = rankCatalysts(
       [
         cat({ ticker: null, kind: "macro", title: "US CPI: October inflation print", dateStart: "2026-03-25" }),
@@ -92,13 +95,13 @@ describe("rankCatalysts", () => {
       { asOf: TODAY, watchlist: [], all: true },
     );
     const by = new Map(rows.map((r) => [r.title, r.score]));
-    expect(by.get("US CPI: October inflation print")).toBeCloseTo(6);
-    expect(by.get("US Jobs report: payrolls")).toBeCloseTo(6);
-    expect(by.get("US PPI: producer prices")).toBeCloseTo(1); // not pinned, weight 1
-    expect(by.get("Off-watchlist earnings")).toBeCloseTo(3);
+    expect(by.get("US CPI: October inflation print")).toBeCloseTo(8);
+    expect(by.get("US Jobs report: payrolls")).toBeCloseTo(8); // nfp
+    expect(by.get("US PPI: producer prices")).toBeCloseTo(4);
+    expect(by.get("Off-watchlist earnings")).toBeCloseTo(4); // earnings_large
   });
 
-  it("elections are pinned with weight 3 like macro and rank right after macro at equal score", () => {
+  it("federal elections score 6 and rank between CPI-class macro (8) and retail sales (4)", () => {
     const rows = rankCatalysts(
       [
         cat({ ticker: null, kind: "election", title: "US midterm elections", dateStart: "2026-03-25" }),
@@ -108,7 +111,9 @@ describe("rankCatalysts", () => {
       { asOf: TODAY, watchlist: [], all: true },
     );
     const by = new Map(rows.map((r) => [r.title, r.score]));
-    expect(by.get("US midterm elections")).toBeCloseTo(6); // same as pinned macro
+    expect(by.get("US midterm elections")).toBeCloseTo(6); // election_federal
+    expect(by.get("US CPI: October inflation print")).toBeCloseTo(8);
+    expect(by.get("US Retail Sales")).toBeCloseTo(4);
     expect(rows.map((r) => r.title)).toEqual(["US CPI: October inflation print", "US midterm elections", "US Retail Sales"]);
   });
 
@@ -135,7 +140,7 @@ describe("rankCatalysts", () => {
     expect(normalizeCompany("Nvidia earnings (Q3)")).toBe("nvidia");
   });
 
-  it("focus earnings and pinned macro rank above off-watchlist earnings regardless of days out", () => {
+  it("focus earnings and macro rank above off-watchlist earnings regardless of days out (no lead multiplier)", () => {
     const rows = rankCatalysts(
       [
         cat({ id: "off-now", ticker: "SMOL", dateStart: "2026-03-02" }),
@@ -146,9 +151,9 @@ describe("rankCatalysts", () => {
       ],
       { asOf: TODAY, watchlist: ["NVDA"] },
     );
-    // kind tie-break: macro sorts before earnings at equal score
-    expect(rows.map((r) => r.id)).toEqual(["cpi-far", "jolts-far", "focus-far", "off-now", "off-far"]);
-    expect(rows[0]!.score).toBeCloseTo(6);
+    // cpi 8, focus-far 4x2=8, jolts 4, off-now 4, off-far 4; kind tie-break: macro before earnings, then date asc.
+    expect(rows.map((r) => r.id)).toEqual(["cpi-far", "focus-far", "jolts-far", "off-now", "off-far"]);
+    expect(rows[0]!.score).toBeCloseTo(8);
   });
 
   it("implied move scales earnings score by clamp(im/0.05, 0.5, 3)", () => {
@@ -172,35 +177,37 @@ describe("rankCatalysts", () => {
   });
 });
 
-describe("policy pinning", () => {
-  it("pins policy catalysts with impactWeight >= 3, scores them 3 x certainty x confidence, then x2; weight 2 stays unpinned", () => {
-    const pinned = cat({ id: "p", ticker: null, kind: "regulatory_decision", dedupeKey: "policy:foo", impactWeight: 3 });
-    const minor = cat({ id: "m", ticker: null, kind: "regulatory_decision", dedupeKey: "policy:bar", impactWeight: 2 });
-    const rows = rankCatalysts([pinned, minor], { asOf: TODAY, watchlist: [] });
-    const [top, low] = rows;
-    expect(top!.id).toBe("p");
-    expect(top!.pinned).toBe(true);
-    expect(top!.score).toBeCloseTo(3 * 1 * 1 * 2);
-    expect(low!.id).toBe("m");
-    expect(low!.pinned).toBeUndefined();
-    expect(low!.score).toBeCloseTo(2 * 1 * 1);
-  });
-
-  it("non-macro base weight prefers impactWeight over KIND_WEIGHTS; macro still uses the kind table", () => {
-    const earnings = cat({ id: "e", kind: "earnings", impactWeight: 2, dateStart: "2026-03-20", dateEnd: "2026-03-20" });
-    const macro = cat({ id: "x", ticker: null, kind: "macro", title: "US CPI: consumer price index · 8:30 ET", impactWeight: 3, dateStart: "2026-03-20", dateEnd: "2026-03-20" });
-    const rows = rankCatalysts([earnings, macro], { asOf: TODAY, watchlist: [] });
-    expect(rows[0]!.id).toBe("x"); // pinned macro (weight 3, x2) outranks weight-2 earnings
-    expect(rows[0]!.score).toBeCloseTo(3 * 1 * 1 * 2);
-    expect(rows[1]!.score).toBeCloseTo(2 * 1 * 1);
-  });
-
-  it("non-precise policy events still land in the default view when pinned", () => {
+describe("policy scoring", () => {
+  it("policy:* regulatory_decision rows score 6 (policy_decision) regardless of impactWeight; FR comment-close rows score 2 and rank below", () => {
     const rows = rankCatalysts(
-      [cat({ id: "w", ticker: null, kind: "litigation", status: "scheduled", dateStart: "2026-03-05", dateEnd: "2026-04-30", datePrecision: "window", dedupeKey: "policy:trial", impactWeight: 3 })],
-      { asOf: TODAY, watchlist: [] },
+      [
+        cat({ id: "p", ticker: null, kind: "regulatory_decision", dedupeKey: "policy:foo", impactWeight: 3 }),
+        cat({ id: "m", ticker: null, kind: "regulatory_decision", dedupeKey: "policy:bar", impactWeight: 2 }),
+        cat({ id: "fr", ticker: null, kind: "regulatory_decision", dedupeKey: "fr:2026-1:comments:2026-03-20", title: "Comments close on the draft rule" }),
+      ],
+      { asOf: TODAY, watchlist: [], all: true },
     );
-    expect(rows.map((r) => r.id)).toEqual(["w"]);
-    expect(rows[0]!.pinned).toBe(true);
+    expect(rows.map((r) => r.id)).toEqual(["m", "p", "fr"]); // 6/6 tie: alphabetical id
+    expect(rows[0]!.score).toBeCloseTo(6);
+    expect(rows[1]!.score).toBeCloseTo(6);
+    expect(rows[2]!.score).toBeCloseTo(2); // policy_comment_close
+  });
+
+  it("impactWeight is ignored: earnings score their class (4) and CPI macro (8) ranks first", () => {
+    const earnings = cat({ id: "e", kind: "earnings", impactWeight: 3, title: "Smolco earnings (Q1)", dateStart: "2026-03-20", dateEnd: "2026-03-20" });
+    const macro = cat({ id: "x", ticker: null, kind: "macro", dedupeKey: "bls:CPI:2026-03-20", impactWeight: 3, title: "US CPI release", dateStart: "2026-03-20", dateEnd: "2026-03-20" });
+    const rows = rankCatalysts([earnings, macro], { asOf: TODAY, watchlist: [] });
+    expect(rows.map((r) => r.id)).toEqual(["x", "e"]);
+    expect(rows[0]!.score).toBeCloseTo(8); // cpi
+    expect(rows[1]!.score).toBeCloseTo(4); // earnings_large (no megacap theme)
+  });
+
+  it("wide-window policy rows are down-weighted: policy_other (1.2) drops out of the default view, rule_effective (2.4) stays", () => {
+    const litigation = cat({ id: "w", ticker: null, kind: "litigation", status: "scheduled", dateStart: "2026-03-05", dateEnd: "2026-04-30", datePrecision: "window", dedupeKey: "policy:trial" });
+    const effective = cat({ id: "eff", ticker: null, kind: "rule_effective", status: "scheduled", dateStart: "2026-03-05", dateEnd: "2026-04-30", datePrecision: "window", dedupeKey: "policy:eff" });
+    expect(rankCatalysts([litigation, effective], { asOf: TODAY, watchlist: [] }).map((r) => r.id)).toEqual(["eff"]); // 6*0.4=2.4 >= 2.0
+    const all = rankCatalysts([litigation, effective], { asOf: TODAY, watchlist: [], all: true });
+    expect(all.map((r) => r.id)).toEqual(["eff", "w"]);
+    expect(all[1]!.score).toBeCloseTo(1.2); // policy_other 3 * wideWindow 0.4
   });
 });
