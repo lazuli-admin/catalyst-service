@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { z } from "zod";
 import { catalystDensity } from "./catalysts/density.js";
 import { rankCatalysts } from "./catalysts/ranked.js";
-import { renderCalendarPage } from "./catalysts/page.js";
+import { isDate, renderCalendarPage, weekSunday } from "./catalysts/page.js";
 import type { Store } from "./db.js";
 import { processItems, runSource, type PipelineDeps } from "./pipeline.js";
 import { listAdapters, parseSourceConfig } from "./sources/registry.js";
@@ -172,13 +172,18 @@ export function buildServer(store: Store, deps: PipelineDeps): FastifyInstance {
 
   // Public, like /health: server-rendered, no API key required.
   app.get("/calendar", async (req, reply) => {
-    const { days, all } = z.object({ days: z.coerce.number().int().min(1).max(120).default(30), all: z.string().optional() }).parse(req.query);
+    const { days, all, week, hide } = z.object({ days: z.coerce.number().int().min(1).max(120).default(30), all: z.string().optional(), week: z.string().optional(), hide: z.string().optional() }).parse(req.query);
     const today = new Date().toISOString().slice(0, 10);
-    const cats = await store.listCatalysts({ from: today, to: new Date(Date.parse(today) + days * 86_400_000).toISOString().slice(0, 10), includeLeads: all === "1" });
+    const w = week && isDate(week) ? weekSunday(week) : null;
+    const from = w ?? today;
+    const to = w
+      ? new Date(Date.parse(`${w}T00:00:00Z`) + 6 * 86_400_000).toISOString().slice(0, 10)
+      : new Date(Date.parse(today) + days * 86_400_000).toISOString().slice(0, 10);
+    const cats = await store.listCatalysts({ from, to, includeLeads: all === "1" });
     return reply
       .header("content-type", "text/html; charset=utf-8")
       .header("cache-control", "public, max-age=300")
-      .send(renderCalendarPage({ cats, asOf: today, all: all === "1" }));
+      .send(renderCalendarPage({ cats, asOf: today, all: all === "1", week: w ?? undefined, hide }));
   });
 
   app.get("/observations", async (req) => store.listObservations(Limit.parse(req.query).limit));
