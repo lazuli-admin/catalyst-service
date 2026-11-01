@@ -2,6 +2,7 @@
  * Topic map for Federal Register relevance: relevance is decided by TOPIC, never agency.
  * Tickers are hand-curated, illustrative, and reviewed manually.
  */
+import { consentPartyTickers } from "./company-universe.js";
 export interface Topic {
   id: string;
   label: string;
@@ -312,6 +313,7 @@ export function isCeremonialPresidential(doc: FrDoc): boolean {
 export function isRelevant(doc: FrDoc): boolean {
   if (isNoise(doc)) return false;
   if (doc.type === "Presidential Document") return !isCeremonialPresidential(doc);
+  if (consentPartyTickers(doc.title).length > 0) return true;
   return classifyTopics(`${doc.title} ${doc.abstract ?? ""}`).length > 0;
 }
 
@@ -319,7 +321,9 @@ export function topicTags(doc: FrDoc): { themes: string[]; affectedTickers: stri
   const matched = classifyTopics(`${doc.title} ${doc.abstract ?? ""}`);
   return {
     themes: [...new Set(matched.flatMap((t) => t.themes))],
-    affectedTickers: [...new Set(matched.flatMap((t) => t.affectedTickers))],
+    affectedTickers: [
+      ...new Set([...matched.flatMap((t) => t.affectedTickers), ...consentPartyTickers(doc.title).map((m) => m.ticker)]),
+    ],
     topics: matched.map((t) => t.id),
   };
 }
