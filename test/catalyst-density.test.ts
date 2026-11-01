@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { catalystDensity, KIND_WEIGHTS } from "../src/catalysts/density.js";
+import { catalystDensity, KIND_WEIGHTS, LEAD_MULTIPLIERS, CLUSTER_BONUS_PER_KIND } from "../src/catalysts/density.js";
+import { IMPORTANCE, scoreEvent } from "../src/scoring/importance.js";
 import type { Catalyst } from "../src/types.js";
 
 const TODAY = "2026-03-01";
+
+const ACT = LEAD_MULTIPLIERS.actionable;
+const PRICED = LEAD_MULTIPLIERS.priced;
 
 function cat(overrides: Partial<Catalyst> = {}): Catalyst {
   return {
@@ -34,55 +38,64 @@ describe("catalystDensity", () => {
     const rows = catalystDensity([cat({ ticker: null }), cat({ kind: "regulatory_decision", title: "FDA decision" })], { asOf: TODAY });
     expect(rows).toHaveLength(1);
     expect(rows[0]!.ticker).toBe("NVDA");
-    expect(rows[0]!.score).toBeCloseTo(3 * 1 * 1 * 1);
+    expect(rows[0]!.score).toBeCloseTo(IMPORTANCE.corporate_major * 1 * 1 * ACT);
   });
 
   it("applies certainty multipliers and lead-time buckets", () => {
     // Exact date = full certainty
     const exact = catalystDensity([cat()], { asOf: TODAY })[0]!;
-    expect(exact.score).toBeCloseTo(3 * 1 * 1);
+    expect(exact.score).toBeCloseTo(scoreEvent(cat()) * ACT);
 
     // Window date with narrow window = full certainty
-    const narrowWindow = catalystDensity([cat({ datePrecision: "window", dateEnd: "2026-03-15" })], { asOf: TODAY })[0]!;
-    expect(narrowWindow.score).toBeCloseTo(3 * 0.7);
+    const narrow = cat({ datePrecision: "window", dateEnd: "2026-03-15" });
+    const narrowWindow = catalystDensity([narrow], { asOf: TODAY })[0]!;
+    expect(narrowWindow.score).toBeCloseTo(scoreEvent(narrow) * ACT);
 
     // Wide window = reduced certainty
-    const wideWindow = catalystDensity([cat({ datePrecision: "window", dateEnd: "2026-04-10" })], { asOf: TODAY })[0]!;
-    expect(wideWindow.score).toBeCloseTo(3 * 0.4);
+    const wide = cat({ datePrecision: "window", dateEnd: "2026-04-10" });
+    const wideWindow = catalystDensity([wide], { asOf: TODAY })[0]!;
+    expect(wideWindow.score).toBeCloseTo(scoreEvent(wide) * ACT);
 
     // Estimated date = lowest certainty
-    const estimated = catalystDensity([cat({ datePrecision: "estimated" })], { asOf: TODAY })[0]!;
-    expect(estimated.score).toBeCloseTo(3 * 0.4);
+    const est = cat({ datePrecision: "estimated" });
+    const estimated = catalystDensity([est], { asOf: TODAY })[0]!;
+    expect(estimated.score).toBeCloseTo(scoreEvent(est) * ACT);
 
     // Lead-time buckets
-    const priced = catalystDensity([cat({ dateStart: "2026-03-05" })], { asOf: TODAY })[0]!;
-    expect(priced.score).toBeCloseTo(3 * 0.5);
+    const pricedFix = cat({ dateStart: "2026-03-05" });
+    const priced = catalystDensity([pricedFix], { asOf: TODAY })[0]!;
+    expect(priced.score).toBeCloseTo(scoreEvent(pricedFix) * PRICED);
 
-    const actionable = catalystDensity([cat({ dateStart: "2026-03-20" })], { asOf: TODAY })[0]!;
-    expect(actionable.score).toBeCloseTo(3 * 1);
+    const actionableFix = cat({ dateStart: "2026-03-20" });
+    const actionable = catalystDensity([actionableFix], { asOf: TODAY })[0]!;
+    expect(actionable.score).toBeCloseTo(scoreEvent(actionableFix) * ACT);
 
-    const watchlist = catalystDensity([cat({ dateStart: "2026-04-15" })], { asOf: TODAY })[0]!;
-    expect(watchlist.score).toBeCloseTo(3 * 0.6);
+    const watchFix = cat({ dateStart: "2026-04-15" });
+    const watchlist = catalystDensity([watchFix], { asOf: TODAY })[0]!;
+    expect(watchlist.score).toBeCloseTo(scoreEvent(watchFix) * LEAD_MULTIPLIERS.watchlist);
 
-    const distant = catalystDensity([cat({ dateStart: "2026-11-16" })], { asOf: TODAY })[0]!;
-    expect(distant.score).toBeCloseTo(3 * 0.3);
+    const distFix = cat({ dateStart: "2026-11-16" });
+    const distant = catalystDensity([distFix], { asOf: TODAY })[0]!;
+    expect(distant.score).toBeCloseTo(scoreEvent(distFix) * LEAD_MULTIPLIERS.distant);
   });
 
   it("uses 10 trading days as the window-certainty threshold", () => {
     // 2026-03-10 .. 2026-03-24 spans exactly 10 weekdays -> still 0.7.
-    const edge = catalystDensity([cat({ datePrecision: "window", dateEnd: "2026-03-24" })], { asOf: TODAY })[0]!;
-    expect(edge.score).toBeCloseTo(3 * 0.7);
+    const edgeFix = cat({ datePrecision: "window", dateEnd: "2026-03-24" });
+    const edge = catalystDensity([edgeFix], { asOf: TODAY })[0]!;
+    expect(edge.score).toBeCloseTo(scoreEvent(edgeFix) * ACT);
     // One more weekday (11) falls past the threshold -> 0.4.
-    const past = catalystDensity([cat({ datePrecision: "window", dateEnd: "2026-03-25" })], { asOf: TODAY })[0]!;
-    expect(past.score).toBeCloseTo(3 * 0.4);
+    const pastFix = cat({ datePrecision: "window", dateEnd: "2026-03-25" });
+    const past = catalystDensity([pastFix], { asOf: TODAY })[0]!;
+    expect(past.score).toBeCloseTo(scoreEvent(pastFix) * ACT);
   });
 
   it("counts affectedTickers at half weight", () => {
     const rows = catalystDensity([cat({ affectedTickers: ["AMD"] })], { asOf: TODAY });
     const nvda = rows.find((r) => r.ticker === "NVDA")!;
     const amd = rows.find((r) => r.ticker === "AMD")!;
-    expect(nvda.score).toBeCloseTo(3 * 1 * 1 * 1);
-    expect(amd.score).toBeCloseTo(3 * 1 * 1 * 1 * 0.5);
+    expect(nvda.score).toBeCloseTo(scoreEvent(cat()) * 1 * 1 * ACT);
+    expect(amd.score).toBeCloseTo(scoreEvent(cat()) * 1 * 1 * ACT * 0.5);
   });
 
   it("gives cluster bonus for distinct kinds in same time window", () => {
@@ -94,7 +107,9 @@ describe("catalystDensity", () => {
     // Should have cluster bonus for NVDA (earnings + deal_close); bonus is scaled by the max lead
     // multiplier (both items are in the actionable bucket = 1.0).
     const nvda = rows.find((r) => r.ticker === "NVDA")!;
-    expect(nvda.score).toBeCloseTo(3 * 1 * 1 * 1 + 3 * 1 * 1 * 1 + 1.5 * 1); // +1.5 for distinct kinds cluster
+    expect(nvda.score).toBeCloseTo(
+      IMPORTANCE.earnings_large * ACT + IMPORTANCE.corporate_major * ACT + CLUSTER_BONUS_PER_KIND * ACT,
+    );
     expect(rows.map((r) => r.ticker)).toEqual(["NVDA", "AMD"]);
     expect(rows[0]!.score).toBeGreaterThan(rows[1]!.score);
   });
@@ -104,7 +119,9 @@ describe("catalystDensity", () => {
     const b = cat({ kind: "deal_close", title: "D", dateStart: "2026-03-05" });
     const rows = catalystDensity([a, b], { asOf: TODAY });
     const nvda = rows.find((r) => r.ticker === "NVDA")!;
-    expect(nvda.score).toBeCloseTo(3 * 0.5 * 2 + 1.5 * 0.5);
+    expect(nvda.score).toBeCloseTo(
+      IMPORTANCE.earnings_large * PRICED + IMPORTANCE.corporate_major * PRICED + CLUSTER_BONUS_PER_KIND * PRICED,
+    );
     expect(nvda.actionableScore).toBe(0); // priced items are not actionable
   });
 
@@ -113,9 +130,9 @@ describe("catalystDensity", () => {
     const b = cat({ kind: "deal_close", title: "D", dateStart: "2026-03-20" }); // actionable bucket
     const rows = catalystDensity([a, b], { asOf: TODAY });
     const nvda = rows.find((r) => r.ticker === "NVDA")!;
-    const base = 3 * 1 * 1 + 3 * 1 * 1;
-    expect(nvda.score).toBeCloseTo(base + 1.5);
-    expect(nvda.actionableScore).toBeCloseTo(base + 1.5);
+    const base = IMPORTANCE.earnings_large * ACT + IMPORTANCE.corporate_major * ACT;
+    expect(nvda.score).toBeCloseTo(base + CLUSTER_BONUS_PER_KIND * ACT);
+    expect(nvda.actionableScore).toBeCloseTo(base + CLUSTER_BONUS_PER_KIND * ACT);
   });
 
   it("does not chain clusters beyond 10 trading days from the first item", () => {
@@ -125,7 +142,12 @@ describe("catalystDensity", () => {
     const rows = catalystDensity([a, b, c], { asOf: TODAY });
     const nvda = rows.find((r) => r.ticker === "NVDA")!;
     // Old chaining would bonus all three; now c starts its own cluster (no bonus for a lone item).
-    expect(nvda.score).toBeCloseTo(3 + 3 + 1.5 + 1);
+    expect(nvda.score).toBeCloseTo(
+      IMPORTANCE.earnings_large * ACT +
+        IMPORTANCE.corporate_major * ACT +
+        CLUSTER_BONUS_PER_KIND * ACT +
+        IMPORTANCE.other * ACT,
+    );
     expect(nvda.clusters).toHaveLength(1);
     expect(nvda.clusters[0]!.start).toBe("2026-03-10");
     expect(nvda.clusters[0]!.kinds).toEqual(["earnings", "deal_close"]);
@@ -135,7 +157,7 @@ describe("catalystDensity", () => {
     const earnings = cat({ kind: "earnings", title: "E", dateStart: "2026-03-10" });
     const policy = cat({ kind: "rule_effective", title: "Rule effective", dedupeKey: "policy:rule-1", dateStart: "2026-03-12" });
     const nvda = catalystDensity([earnings, policy], { asOf: TODAY }).find((r) => r.ticker === "NVDA")!;
-    expect(nvda.score).toBeCloseTo(3 + 3); // no cluster bonus across the policy/non-policy boundary
+    expect(nvda.score).toBeCloseTo(IMPORTANCE.earnings_large * ACT + IMPORTANCE.policy_decision * ACT); // no cluster bonus across the policy/non-policy boundary
     expect(nvda.clusters).toHaveLength(0);
   });
 
@@ -148,7 +170,13 @@ describe("catalystDensity", () => {
     expect(nvda.clusters).toHaveLength(2);
     expect(nvda.clusters[0]!.kinds).toEqual(["earnings", "deal_close"]); // starts 2026-03-10
     expect(nvda.clusters[1]!.kinds).toEqual(["rule_effective", "regulatory_decision"]); // starts 2026-03-12
-    expect(nvda.score).toBeCloseTo(3 + 3 + 1.5 + 3 + 3 + 1.5); // one bonus per group
+    expect(nvda.score).toBeCloseTo(
+      IMPORTANCE.earnings_large * ACT +
+        IMPORTANCE.corporate_major * ACT +
+        CLUSTER_BONUS_PER_KIND * ACT +
+        IMPORTANCE.policy_decision * ACT * 2 +
+        CLUSTER_BONUS_PER_KIND * ACT,
+    ); // one bonus per group
   });
 
   it("excludes leads, cancelled, done, and past catalysts", () => {
