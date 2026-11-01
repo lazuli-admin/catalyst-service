@@ -10,6 +10,8 @@ describe("presidential keep-by-default", () => {
       "Excluding Certain Canadian Products From Importation Into the United States in Response to Continued Discrimination Against American Alcoholic Beverages",
       "Ensuring Affordable Beef for the American Consumer",
       "Ushering in the Next Frontier of Quantum Innovation",
+      "Adjusting Imports To Protect National Security During the Coming Year",
+      "Declaring a National Emergency With Respect to Example Imports This Year",
     ];
     for (const title of kept) {
       expect(isRelevant({ title, type: "Presidential Document" })).toBe(true);
@@ -25,6 +27,7 @@ describe("presidential keep-by-default", () => {
   it("drops ceremonial presidential documents", () => {
     const dropped = [
       "National Example Awareness Month, 2026",
+      "Example Heritage Month, 2026",
       "National Day of Prayer, 2026",
       "Honoring the Victims of the Example Tragedy",
       "Death of Example Person",

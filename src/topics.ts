@@ -304,7 +304,7 @@ export function isNoise(doc: FrDoc): boolean {
 
 // Ceremonial/proclamation presidential documents (commemorations, honors, flag half-staff, holiday closings) are kept by default:
 // presidential relevance needs no topic, only absence of ceremony.
-export const CEREMONIAL_PRESIDENTIAL_RE = /\bnational\s+[\w'’ -]{1,60}\b(?:day|week|month|year)\b|\b(?:day|week|month)\s+of\s+(?:prayer|remembrance|observance|recognition|thanksgiving|mourning)\b|\bobservance\b|\banniversary\b|\bhonou?ring\b|\bin\s+(?:memory|honou?r)\s+of\b|\bdeath\s+of\b|\bhalf[- ]staff\b|\bflags?\b.{0,40}\bhalf\b|\bclosing\s+of\s+executive\s+departments\b|\bthanksgiving\s+day\b/i;
+export const CEREMONIAL_PRESIDENTIAL_RE = /^national\b[^;]{0,80}\b(?:day|week|month|year)\b|\b(?:day|week|month)\b,?\s+\d{4}$|\b(?:day|week|month)\s+of\s+(?:prayer|remembrance|observance|recognition|thanksgiving|mourning)\b|\bobservance\b|\banniversary\b|\bhonou?ring\b|\bin\s+(?:memory|honou?r)\s+of\b|\bdeath\s+of\b|\bhalf[- ]staff\b|\bflags?\b.{0,40}\bhalf\b|\bclosing\s+of\s+executive\s+departments\b|\bthanksgiving\s+day\b/i;
 
 export function isCeremonialPresidential(doc: FrDoc): boolean {
   return doc.type === "Presidential Document" && CEREMONIAL_PRESIDENTIAL_RE.test(doc.title);
