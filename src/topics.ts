@@ -248,7 +248,11 @@ export const NOISE_PATTERNS: RegExp[] = [
   /information collection|submission (to|for) (the )?OMB|paperwork reduction/i,
   /^sunshine act/i,
   // SRO noise only: routine procedural/admin filings (fees, timing, technical/clarifying/conforming tweaks), not substantive rule filings.
-  /^self-regulatory organizations\b.*(\bfees?\b|fee schedule|pricing|designation of (a )?longer period|extension of (the )?time|technical (changes?|amendments?)|clarif(y|ying|ication)|conforming (changes?|amendments?))/i,
+  /^self-regulatory organizations\b.*(\bfees?\b|fee schedule|pricing|technical (changes?|amendments?)|conforming (changes?|amendments?))/i,
+  // SEC procedural timing notices, regardless of SRO prefix (advance notices, review-period extensions)
+  /designation of (a )?longer period|extension of (the )?(review period|time)\b/i,
+  // SRO filings where a clarification is the whole change (kept when paired with substantive words like adopt/establish/list and trade/listing/amend ... listing)
+  /^self-regulatory organizations\b(?!.*\b(adopt|establish|list and trade|listing (standards?|requirements?|rules?)|amend[^;]{0,40}listing)\b).*(\bto clarify\b|\bclarifying (changes?|amendments?)\b)/i,
   /petition for rulemaking|petition for reconsideration/i,
   /commercial gauger|commercial laborator/i,
   /list of rules to be reviewed/i,
@@ -262,8 +266,8 @@ export const NOISE_PATTERNS: RegExp[] = [
   /short[- ]supply|commercial availability/i,
   // marine-mammal incidental take authorizations (e.g. for cable landing construction)
   /incidental take|marine mammals?/i,
-  // routine technical correction titles are non-substantive amendments
-  /technical corrections?\b/i,
+  // technical corrections are noise only when the correction is the whole change (kept when paired with additions, e.g. "and Technical Corrections" or "Technical Correction and ...")
+  /^(?!.*(\btechnical corrections?\s+(and|&)\s+\w|\b(and|&)\s+technical corrections?\b)).*\btechnical corrections?\b/i,
 ];
 
 export interface FrDoc {
