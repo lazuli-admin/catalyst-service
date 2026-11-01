@@ -203,8 +203,8 @@
   "type": "Notice",
   "title": "Request for Comments on the Effect of the European Union's Carbon Border Adjustment Mechanism and the Proposals To Expand Coverage on U.S. Trade",
   "abstract": "The Office of the United States Trade Representative (USTR) invites comments regarding the current and potential impact of the European Union's (EU) Carbon Border Adjustment Mechanism (CBAM) on U.S. producers, including small- and medium-sized producers; workers; U.S. direct and indirect exports; and overall U.S. trade with the EU. Under CBAM, EU importers of products covered by the CBAM (covered products) in the aluminum, cement, electricity, fertilizer, hydrogen, and iron and steel sectors are required to declare information on carbon dioxide and other specified greenhouse gas emissions gene",
-  "relevant": false,
-  "reason": "comment request on foreign measure"
+  "relevant": true,
+  "reason": "EU CBAM: steel/aluminum/cement/fertilizer exporters (relabeled after regression)"
  },
  {
   "document_number": "2026-20510",

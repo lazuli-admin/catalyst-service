@@ -1,7 +1,7 @@
 // Deterministic structured catalysts: Federal Register rules (public JSON API, no key) + static elections calendar. No LLM.
 import type { Store } from "../db.js";
 import { errorMessage } from "../util.js";
-import { isRelevant, topicTags } from "../topics.js";
+import { isNoise, isRelevant, NOISE_PATTERNS, topicTags } from "../topics.js";
 
 const TIMEOUT_MS = 15_000;
 
@@ -48,6 +48,13 @@ function horizonEnd(today: string, horizonDays: number): string {
   return new Date(Date.parse(`${today}T00:00:00Z`) + horizonDays * 86_400_000).toISOString().slice(0, 10); // clock-guard: pure-date
 }
 
+export type FrDrop = { dedupeKey: string; title: string; reason: string };
+export type FrSyncReport = { at: string; count: number; drops: FrDrop[] };
+let lastFrSyncReport: FrSyncReport | null = null;
+export function getLastFrSyncReport(): FrSyncReport | null {
+  return lastFrSyncReport;
+}
+
 async function fetchJson(url: string, fetchImpl: typeof fetch): Promise<unknown> {
   const res = await fetchImpl(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
@@ -55,13 +62,14 @@ async function fetchJson(url: string, fetchImpl: typeof fetch): Promise<unknown>
 }
 
 export async function syncFederalRegister(
-  store: Pick<Store, "upsertCatalyst" | "purgeStaleCatalysts">,
+  store: Pick<Store, "upsertCatalyst" | "purgeStaleCatalysts" | "listStaleCatalysts">,
   opts: { today: string; horizonDays: number; fetch?: typeof fetch; log?: (m: string) => void },
 ): Promise<void> {
   const fetchImpl = opts.fetch ?? fetch;
   const log = opts.log ?? (() => {});
   const runStart = new Date().toISOString();
   let allAgenciesOk = true;
+  const dropReasons = new Map<string, string>();
   const end = horizonEnd(opts.today, opts.horizonDays);
   const gte = new Date(Date.parse(`${opts.today}T00:00:00Z`) - 400 * 86_400_000).toISOString().slice(0, 10); // clock-guard: pure-date
   const fields = ["title", "effective_on", "publication_date", "html_url", "abstract", "document_number", "comments_close_on", "type", "dates"]
@@ -84,7 +92,15 @@ export async function syncFederalRegister(
         if (!title || !documentNumber) continue;
         // Relevance is decided by TOPIC, never agency; corrections are already covered by isNoise.
         const doc = { title, abstract, type: row.type as string, documentNumber };
-        if (!isRelevant(doc)) continue;
+        if (isNoise(doc)) {
+          dropReasons.set(documentNumber, `noise:${NOISE_PATTERNS.find((p) => p.test(title))?.source ?? "correction"}`);
+          continue;
+        }
+        if (!isRelevant(doc)) {
+          dropReasons.set(documentNumber, "no topic match");
+          continue;
+        }
+        let upserted = false;
         const tags = topicTags(doc);
         // Effective-date candidates keep the plain title; abstract end dates shift to the NEXT day (rule back in force).
         const inWindow = (d: string) => d >= opts.today && d <= end;
@@ -107,6 +123,7 @@ export async function syncFederalRegister(
           const display = isEnd
             ? `${/affiliat|end-user/i.test(title) ? `${agency.label} affiliates rule` : `${agency.label}: rule`} back in force ${fmtDate(date)} (suspension ends ${fmtDate(abstractEnd!)}) — ${title}`
             : title;
+          upserted = true;
           await store.upsertCatalyst({
             ticker: null,
             title: display,
@@ -133,6 +150,7 @@ export async function syncFederalRegister(
             : null;
         if (proposedInitial && commentsOn && inWindow(proposedInitial)) {
           // Relevance already covers comment-close rows; no extra filter needed.
+          upserted = true;
           await store.upsertCatalyst({
             ticker: null,
             title: `${agency.label} comments close ${fmtDate(proposedInitial)} (replies ${fmtDate(commentsOn)}): ${title}`,
@@ -151,6 +169,7 @@ export async function syncFederalRegister(
           });
         } else if (commentsOn && inWindow(commentsOn)) {
           // Relevance already covers comment-close rows; no extra filter needed.
+          upserted = true;
           await store.upsertCatalyst({
             ticker: null,
             title: `${agency.label} comments close: ${title}`,
@@ -168,6 +187,7 @@ export async function syncFederalRegister(
             dedupeKey: `fr:${documentNumber}:comments:${commentsOn}`,
           });
         }
+        if (!upserted) dropReasons.set(documentNumber, "out of window");
       }
     } catch (err) {
       allAgenciesOk = false;
@@ -176,6 +196,17 @@ export async function syncFederalRegister(
   }
   // Only delete rows the current code would have refreshed; a partial run must not wipe fresh-looking old rows.
   if (allAgenciesOk) {
+    const drops: FrDrop[] = [];
+    for (const kind of ["rule_effective", "regulatory_decision"] as const) {
+      const stale = await store.listStaleCatalysts(kind, opts.today, runStart, "fr:");
+      for (const row of stale) {
+        const docNumber = row.dedupeKey.split(":")[1] ?? "";
+        const reason = dropReasons.get(docNumber) ?? "source missing";
+        log(`federal register drop ${row.dedupeKey} (${reason}): ${row.title}`);
+        drops.push({ dedupeKey: row.dedupeKey, title: row.title, reason });
+      }
+    }
+    lastFrSyncReport = { at: new Date().toISOString(), count: drops.length, drops };
     await store.purgeStaleCatalysts("rule_effective", opts.today, runStart, "fr:");
     await store.purgeStaleCatalysts("regulatory_decision", opts.today, runStart, "fr:");
   }

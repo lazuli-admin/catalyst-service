@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { catalystDensity } from "./catalysts/density.js";
+import { getLastFrSyncReport } from "./catalysts/federal-register.js";
 import { rankCatalysts } from "./catalysts/ranked.js";
 import { isDate, renderCalendarPage, weekSunday } from "./catalysts/page.js";
 import { addDays, marketToday, systemClock } from "./clock.js";
@@ -109,7 +110,10 @@ export function buildServer(store: Store, deps: PipelineDeps, opts: { lock?: Syn
 
   const notFound = { error: "not_found" };
 
-  app.get("/health", async () => ({ ok: true, locks: lock.stats() }));
+  app.get("/health", async () => {
+    const report = getLastFrSyncReport();
+    return { ok: true, locks: lock.stats(), frDrops: report ? { at: report.at, count: report.count, drops: report.drops.slice(0, 10) } : null };
+  });
   app.get("/source-types", async () => listAdapters());
 
   app.get("/themes", async () => store.listThemes());

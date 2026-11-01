@@ -1,0 +1,106 @@
+[
+  {
+    "document_number": "2026-22385",
+    "title": "Adjusting Imports of Robotics, Industrial Machinery, and Their Parts and Components Into the United States",
+    "abstract": null,
+    "agency": "executive-office-of-the-president",
+    "relevant": true,
+    "reason": "shipped in all=1 before step 4 (regression)"
+  },
+  {
+    "document_number": "2026-22049",
+    "title": "Adjusting Imports of Wind Turbines and Their Parts and Components Into the United States",
+    "abstract": null,
+    "agency": "executive-office-of-the-president",
+    "relevant": true,
+    "reason": "shipped in all=1 before step 4 (regression)"
+  },
+  {
+    "document_number": "2026-21755",
+    "title": "Request for Comments on Further Suspension of Section 301 Action: China's Targeting of the Maritime, Logistics, and Shipbuilding Sectors for Dominance",
+    "abstract": "To allow for further negotiation with China regarding the acts, policies, and practices at issue in this investigation, the U.S. Trade Representative (Trade Representative) is proposing to modify the action taken in this investigation to further suspend that action for two months, through January 9, 2027. This notice invites public comment from interested parties on the proposed modification.",
+    "agency": "trade-representative-office-of-united-states",
+    "relevant": true,
+    "reason": "shipped in all=1 before step 4 (regression)"
+  },
+  {
+    "document_number": "2026-20650",
+    "title": "Low-Value Shipments",
+    "abstract": "This document proposes to amend the U.S. Customs and Border Protection regulations to modify filing requirements for informal entries of goods valued at $2,500 or less and to establish a new electronic informal entry type for merchandise entering through the mail environment. This document also proposes other related changes such as requiring an additional data element for carriers pertaining to mail shipments and imposing bonding requirements for certain informal entries.",
+    "agency": "homeland-security-department",
+    "relevant": true,
+    "reason": "shipped in all=1 before step 4 (regression)"
+  },
+  {
+    "document_number": "2026-20615",
+    "title": "Request for Comments on the Effect of the European Union's Carbon Border Adjustment Mechanism and the Proposals To Expand Coverage on U.S. Trade",
+    "abstract": "The Office of the United States Trade Representative (USTR) invites comments regarding the current and potential impact of the European Union's (EU) Carbon Border Adjustment Mechanism (CBAM) on U.S. producers, including small- and medium-sized producers; workers; U.S. direct and indirect exports; and overall U.S. trade with the EU. Under CBAM, EU importers of products covered by the CBAM (covered products) in the aluminum, cement, electricity, fertilizer, hydrogen, and iron and steel sectors are required to declare information on carbon dioxide and other specified greenhouse gas emissions generated in the production of imported goods and to purchase CBAM certificates based on the amount of that embedded carbon. The EU began the full implementation of CBAM on January 1, 2026. The EU is also considering legislative proposals to expand CBAM coverage to downstream steel- and aluminum-intensive products. USTR is seeking comments on the impact of the CBAM on U.S. trade with the EU, as well as the potential impact of the EU's proposals to expand CBAM coverage. Such comments will help inform continued USTR and U.S. government engagement with the EU on CBAM.",
+    "agency": "trade-representative-office-of-united-states",
+    "relevant": true,
+    "reason": "shipped in all=1 before step 4 (regression)"
+  },
+  {
+    "document_number": "2026-20466",
+    "title": "Adviser and Regulated Fund Custody Rules; Crypto Custody Rules",
+    "abstract": "The Securities and Exchange Commission (the \"Commission\" or the \"SEC\") is proposing new custody rules under the Investment Company Act of 1940 (the \"Investment Company Act\") and amendments to related reporting and recordkeeping requirements to address how regulated investment companies may custody crypto securities and similar investments, and amendments to the custody rule and related reporting and recordkeeping rules under the Investment Advisers Act of 1940 (the \"Advisers Act\") to address how registered investment advisers may custody client crypto funds and securities. We are also proposing to amend the current custody rules to modernize their requirements, to better address current industry practices and feedback, and to implement certain conforming amendments. We are also proposing amendments to the recordkeeping rules under the Investment Company Act and Advisers Act related to these proposed modernization amendments to the custody rules. Additionally, we are proposing to redesignate the custody rule under the Advisers Act and to make corresponding amendments to Form ADV and Form ADV-E for registered investment advisers to reflect the Advisers Act custody rule redesignation. We are also proposing amendments to Form ADV for registered investment advisers and Form N-CEN for regulated investment companies and to improve the quality of public disclosures made on these forms. We are also proposing to add new questions to Form ADV and Form N-CEN related to tokenized private funds and regulated investment company shares, respectively.",
+    "agency": "securities-and-exchange-commission",
+    "relevant": true,
+    "reason": "shipped in all=1 before step 4 (regression)"
+  },
+  {
+    "document_number": "2026-19260",
+    "title": "Rescission of Rule 14a-8's Federal Regulation of Shareholder Proposals and Amendments to Rule 14a-4",
+    "abstract": "The Securities and Exchange Commission (\"Commission\") is proposing to rescind Rule 14a-8 under the Securities Exchange Act of 1934 (\"Exchange Act\") and leave determinations about the role of shareholder proposals to State law and company governing documents. The Commission also is proposing to amend Rule 14a-4 under the Exchange Act to expand the circumstances under which a company may exercise, with respect to proxies it receives, discretionary voting authority on proposals that will be presented at a shareholder meeting but not included in the company's proxy materials. At the same time, the proposed amendments to Rule 14a-4 would provide shareholders with the means to elect to prevent the company from exercising such authority with respect to their individual shares.",
+    "agency": "securities-and-exchange-commission",
+    "relevant": true,
+    "reason": "shipped in all=1 before step 4 (regression)"
+  },
+  {
+    "document_number": "2026-19259",
+    "title": "Proxy Solicitation Modernization",
+    "abstract": "The Securities and Exchange Commission (\"Commission\") is proposing amendments to modernize certain rules related to proxy solicitations. The proposed amendments would, among other things, eliminate the requirement that registrants deliver an annual report to security holders, eliminate the delivery deadline when documents are incorporated by reference into a proxy statement, eliminate the requirement to file soliciting material regarding certain exempt solicitations, and shorten the minimum broker search period for proxy solicitations. The proposed amendments are intended to update our rules to account for developments since their adoption or last amendment and to simplify compliance for registrants.",
+    "agency": "securities-and-exchange-commission",
+    "relevant": true,
+    "reason": "shipped in all=1 before step 4 (regression)"
+  },
+  {
+    "document_number": "2026-18282",
+    "title": "Unleashing Unlicensed Spectrum for Direct-to-Device",
+    "abstract": "The Federal Communications Commission (Commission or FCC) issues a Notice of Proposed Rulemaking proposes to expand opportunities for direct-to-device (D2D) communications by permitting certain unlicensed devices to communicate with satellites on a non-interference basis. Building on recent market growth and new industry investment in D2D technologies, the NPRM explores adding satellite allocations in specific unlicensed bands, clarifying that equipment may operate within spacecraft, and establishing a flexible regulatory framework that preserves incumbent operations while enabling continued innovation. The Commission seeks comment on technical, licensing, and policy considerations to support expanded D2D connectivity and ensure coexistence with existing services.",
+    "agency": "federal-communications-commission",
+    "relevant": true,
+    "reason": "shipped in all=1 before step 4 (regression)"
+  },
+  {
+    "document_number": "2026-16979",
+    "title": "Adjusting Imports of Unmanned Aircraft Systems and Unmanned Aircraft Systems Components Into the United States",
+    "abstract": null,
+    "agency": "executive-office-of-the-president",
+    "relevant": true,
+    "reason": "shipped in all=1 before step 4 (regression)"
+  },
+  {
+    "document_number": "2026-16400",
+    "title": "Adjusting Imports of Polysilicon and Its Derivatives Into the United States",
+    "abstract": null,
+    "agency": "executive-office-of-the-president",
+    "relevant": true,
+    "reason": "shipped in all=1 before step 4 (regression)"
+  },
+  {
+    "document_number": "2025-21671",
+    "title": "Notice of Product Exclusion Extensions: China's Acts, Policies, and Practices Related to Technology Transfer, Intellectual Property, and Innovation",
+    "abstract": "In prior notices, the U.S. Trade Representative modified the actions in the Section 301 investigation of China's acts, policies, and practices related to technology transfer, intellectual property, and innovation by excluding from additional duties certain products of China. This notice announces the U.S. Trade Representative's determination to extend the 178 current exclusions.",
+    "agency": "trade-representative-office-of-united-states",
+    "relevant": true,
+    "reason": "shipped in all=1 before step 4 (regression)"
+  },
+  {
+    "document_number": "2025-19846",
+    "title": "One Year Suspension of Expansion of End-User Controls for Affiliates of Certain Listed Entities",
+    "abstract": "In this final rule, the Bureau of Industry and Security (BIS) imposes a one-year suspension of the interim final rule, \"Expansion of End-User Controls to Cover Affiliates of Certain Listed Entities,\". The suspension is set to end November 9, 2026, absent a future extension.",
+    "agency": "commerce-department",
+    "relevant": true,
+    "reason": "shipped in all=1 before step 4 (regression)"
+  }
+]
