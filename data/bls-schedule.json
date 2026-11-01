@@ -1,0 +1,14 @@
+{
+  "source": "https://www.bls.gov/schedule/news_release/",
+  "verifiedAt": "2026-10-31",
+  "releases": [
+    {"date":"2026-11-03","time":"10:00","release":"Job Openings and Labor Turnover Survey (JOLTS) for September 2026","series":"JOLTS","url":"https://www.bls.gov/schedule/2026/11_sched_list.htm"},
+    {"date":"2026-11-06","time":"08:30","release":"Employment Situation (jobs report) for October 2026","series":"Jobs report","url":"https://www.bls.gov/schedule/2026/11_sched_list.htm"},
+    {"date":"2026-11-10","time":"08:30","release":"Consumer Price Index (CPI) for October 2026","series":"CPI","url":"https://www.bls.gov/schedule/2026/11_sched_list.htm"},
+    {"date":"2026-11-13","time":"08:30","release":"Producer Price Index (PPI) for October 2026","series":"PPI","url":"https://www.bls.gov/schedule/2026/11_sched_list.htm"},
+    {"date":"2026-12-01","time":"10:00","release":"Job Openings and Labor Turnover Survey (JOLTS) for October 2026","series":"JOLTS","url":"https://www.bls.gov/schedule/2026/12_sched_list.htm"},
+    {"date":"2026-12-04","time":"08:30","release":"Employment Situation (jobs report) for November 2026","series":"Jobs report","url":"https://www.bls.gov/schedule/2026/12_sched_list.htm"},
+    {"date":"2026-12-10","time":"08:30","release":"Consumer Price Index (CPI) for November 2026","series":"CPI","url":"https://www.bls.gov/schedule/2026/12_sched_list.htm"},
+    {"date":"2026-12-15","time":"08:30","release":"Producer Price Index (PPI) for November 2026","series":"PPI","url":"https://www.bls.gov/schedule/2026/12_sched_list.htm"}
+  ]
+}
