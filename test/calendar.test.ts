@@ -85,9 +85,9 @@ describe("renderCalendarPage", () => {
     const html = renderCalendarPage({
       cats: [
         full(cat({ dateStart: inWeek(6), dateEnd: inWeek(6), dedupeKey: "nvda" })),
-        full(cat({ ticker: "MEGA", dateStart: inWeek(6), dateEnd: inWeek(6), themes: ["megacap"], dedupeKey: "mega" })),
-        full(cat({ ticker: "XYZ", dateStart: inWeek(6), dateEnd: inWeek(6), sourceUrl: null, dedupeKey: "xyz" })),
-        full(cat({ ticker: "ABC", dateStart: inWeek(6), dateEnd: inWeek(6), sourceUrl: null, dedupeKey: "abc" })),
+        full(cat({ ticker: "MEGA", title: "Megacorp earnings (Q1)", dateStart: inWeek(6), dateEnd: inWeek(6), themes: ["megacap"], dedupeKey: "mega" })),
+        full(cat({ ticker: "XYZ", title: "Xyz Corp earnings (Q1)", dateStart: inWeek(6), dateEnd: inWeek(6), sourceUrl: null, dedupeKey: "xyz" })),
+        full(cat({ ticker: "ABC", title: "Abc Corp earnings (Q1)", dateStart: inWeek(6), dateEnd: inWeek(6), sourceUrl: null, dedupeKey: "abc" })),
       ],
       asOf: today,
       all: false,
@@ -106,8 +106,8 @@ describe("renderCalendarPage", () => {
     const today = new Date().toISOString().slice(0, 10);
     const html = renderCalendarPage({
       cats: [
-        full(cat({ ticker: "XYZ", dateStart: inWeek(6), dateEnd: inWeek(6), sourceUrl: null, dedupeKey: "xyz" })),
-        full(cat({ ticker: "ABC", dateStart: inWeek(6), dateEnd: inWeek(6), sourceUrl: null, dedupeKey: "abc" })),
+        full(cat({ ticker: "XYZ", title: "Xyz Corp earnings (Q1)", dateStart: inWeek(6), dateEnd: inWeek(6), sourceUrl: null, dedupeKey: "xyz" })),
+        full(cat({ ticker: "ABC", title: "Abc Corp earnings (Q1)", dateStart: inWeek(6), dateEnd: inWeek(6), sourceUrl: null, dedupeKey: "abc" })),
         full(cat({ ticker: "NVDA", title: "Rumor mill", kind: "conference", dateStart: inWeek(6), dateEnd: inWeek(6), sourceUrl: null, dedupeKey: "rumor" })),
       ],
       asOf: today,
@@ -253,6 +253,21 @@ describe("renderCalendarPage", () => {
     expect(html).not.toContain("N distinct");
   });
 
+  it("labels clusters containing a BIS rule with the fixed BIS export controls summary", () => {
+    const wk = weekSunday("2026-06-10");
+    const wd = (i: number) => new Date(Date.parse(wk) + i * 86_400_000).toISOString().slice(0, 10);
+    const html = renderCalendarPage({
+      cats: [
+        full(cat({ ticker: "NVDA", title: "BIS export control rule: advanced computing", kind: "regulatory_decision", dateStart: wd(3), dateEnd: wd(3), sourceUrl: null, dedupeKey: "bis" })),
+        full(cat({ ticker: "NVDA", title: "Rumor mill", kind: "conference", dateStart: wd(3), dateEnd: wd(3), sourceUrl: null, dedupeKey: "bis-rumor" })),
+      ],
+      asOf: wk,
+      all: false,
+    });
+    expect(html).toContain("<summary>BIS export controls · semis · ");
+    expect(html).not.toContain("NVDA regulatory decision + NVDA conference");
+  });
+
   it("shows multi-day events on every day of their range in the shown week", () => {
     const wk = weekSunday("2026-06-10");
     const wd = (i: number) => new Date(Date.parse(wk) + i * 86_400_000).toISOString().slice(0, 10);
@@ -302,7 +317,7 @@ describe("renderCalendarPage", () => {
     });
     const summary = html.match(/<details class="cluster"><summary>([^<]*)<\/summary>/);
     expect(summary).not.toBeNull();
-    expect(summary![1]).toMatch(/^NVDA earnings \+ BIS affiliates rule · \d+\.\d · Nov 11–12$/);
+    expect(summary![1]).toMatch(/^BIS export controls · semis · \d+\.\d · Nov 11–12$/);
     expect(html).toContain(`${wd(3)} (exact) earnings Q3 earnings`);
     expect(html).toContain(`${wd(4)} (window) rule_effective`);
     expect(html).not.toContain("<script>");

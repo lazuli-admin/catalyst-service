@@ -39,12 +39,12 @@ describe("syncPrimaryMacro", () => {
     const count = await syncPrimaryMacro(s as never, { ...opts, fetch: mockFetch({}, "") as unknown as typeof fetch });
     const bls = rows(s).filter((r) => r.dedupeKey.startsWith("bls:"));
     expect(bls.map((r) => [r.title, r.dedupeKey, r.sourceUrl])).toEqual([
-      ["US Jobs report: Employment Situation (jobs report) for October 2026", "bls:Jobs report:2026-11-06", "https://www.bls.gov/schedule/2026/11_sched_list.htm"],
-      ["US CPI: Consumer Price Index (CPI) for October 2026", "bls:CPI:2026-11-10", "https://www.bls.gov/schedule/2026/11_sched_list.htm"],
-      ["US PPI: Producer Price Index (PPI) for October 2026", "bls:PPI:2026-11-13", "https://www.bls.gov/schedule/2026/11_sched_list.htm"],
-      ["US JOLTS: Job Openings and Labor Turnover Survey (JOLTS) for October 2026", "bls:JOLTS:2026-12-01", "https://www.bls.gov/schedule/2026/12_sched_list.htm"],
-      ["US Jobs report: Employment Situation (jobs report) for November 2026", "bls:Jobs report:2026-12-04", "https://www.bls.gov/schedule/2026/12_sched_list.htm"],
-      ["US CPI: Consumer Price Index (CPI) for November 2026", "bls:CPI:2026-12-10", "https://www.bls.gov/schedule/2026/12_sched_list.htm"],
+      ["US Jobs report: Employment Situation (jobs report) for October 2026 · 8:30 ET", "bls:Jobs report:2026-11-06", "https://www.bls.gov/schedule/2026/11_sched_list.htm"],
+      ["US CPI: Consumer Price Index (CPI) for October 2026 · 8:30 ET", "bls:CPI:2026-11-10", "https://www.bls.gov/schedule/2026/11_sched_list.htm"],
+      ["US PPI: Producer Price Index (PPI) for October 2026 · 8:30 ET", "bls:PPI:2026-11-13", "https://www.bls.gov/schedule/2026/11_sched_list.htm"],
+      ["US JOLTS: Job Openings and Labor Turnover Survey (JOLTS) for October 2026 · 10:00 ET", "bls:JOLTS:2026-12-01", "https://www.bls.gov/schedule/2026/12_sched_list.htm"],
+      ["US Jobs report: Employment Situation (jobs report) for November 2026 · 8:30 ET", "bls:Jobs report:2026-12-04", "https://www.bls.gov/schedule/2026/12_sched_list.htm"],
+      ["US CPI: Consumer Price Index (CPI) for November 2026 · 8:30 ET", "bls:CPI:2026-12-10", "https://www.bls.gov/schedule/2026/12_sched_list.htm"],
     ]);
     expect(bls.every((r) => r.sourceTier === 1 && r.confidence === 1 && r.status === "scheduled" && r.datePrecision === "exact" && r.ticker === null && r.kind === "macro")).toBe(true);
     expect(count).toBe(bls.length);
@@ -56,9 +56,9 @@ describe("syncPrimaryMacro", () => {
     const bea = rows(s).filter((r) => r.dedupeKey.startsWith("bea:"));
     // 13:30Z -> same day ET; 02:30Z on Mar 1 -> still Feb 28 ET; trade release filtered out.
     expect(bea.map((r) => [r.title, r.dateStart, r.dedupeKey]).sort()).toEqual([
-      ["US GDP: Gross Domestic Product", "2026-02-19", "bea:GDP:2026-02-19"],
-      ["US GDP: Gross Domestic Product", "2026-02-28", "bea:GDP:2026-02-28"],
-      ["US PCE: Personal Income and Outlays", "2026-02-06", "bea:PCE:2026-02-06"],
+      ["US GDP: Gross Domestic Product · 8:30 ET", "2026-02-19", "bea:GDP:2026-02-19"],
+      ["US GDP: Gross Domestic Product · 8:30 ET", "2026-02-28", "bea:GDP:2026-02-28"],
+      ["US PCE: Personal Income and Outlays · 8:30 ET", "2026-02-06", "bea:PCE:2026-02-06"],
     ]);
     expect(bea.every((r) => r.sourceUrl === "https://www.bea.gov/news/schedule")).toBe(true);
   });
@@ -72,7 +72,7 @@ describe("syncPrimaryMacro", () => {
     await syncPrimaryMacro(s as never, { today: "2026-12-01", horizonDays: 30, blsSchedule: "/nonexistent.json", fetch: mockFetch({}, FOMC_HTML) as unknown as typeof fetch });
     const fed = rows(s).filter((r) => r.dedupeKey.startsWith("fed:"));
     expect(fed.map((r) => [r.title, r.dateStart, r.dateEnd, r.dedupeKey])).toEqual([
-      ["FOMC rate decision Dec 9 (meeting Dec 8–Dec 9) + SEP", "2026-12-08", "2026-12-09", "fed:fomc:2026-12-08"],
+      ["FOMC rate decision Dec 9 (meeting Dec 8–Dec 9) + SEP · decision 2:00 PM ET", "2026-12-08", "2026-12-09", "fed:fomc:2026-12-08"],
     ]);
     expect(fed.every((r) => r.sourceUrl === FOMC_URL && r.confidence === 1 && r.sourceTier === 1)).toBe(true);
   });

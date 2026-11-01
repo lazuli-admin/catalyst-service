@@ -16,6 +16,16 @@ const BEA_SERIES: Record<string, string> = {
   "Gross Domestic Product": "GDP",
 };
 
+/** Scheduled release times (ET) appended to titles, per series. */
+const RELEASE_TIME: Record<string, string> = {
+  CPI: "8:30 ET",
+  "Jobs report": "8:30 ET",
+  PPI: "8:30 ET",
+  JOLTS: "10:00 ET",
+  PCE: "8:30 ET",
+  GDP: "8:30 ET",
+};
+
 const MONTH_INDEX: Record<string, number> = {
   January: 1, February: 2, March: 3, April: 4, May: 5, June: 6,
   July: 7, August: 8, September: 9, October: 10, November: 11, December: 12,
@@ -81,7 +91,7 @@ async function syncBls(store: Pick<Store, "upsertCatalyst">, opts: { today: stri
     opts,
     (body.releases ?? []).map((e) => ({
       date: e.date,
-      title: `US ${e.series}: ${e.release}`,
+      title: `US ${e.series}: ${e.release}${RELEASE_TIME[e.series] ? ` · ${RELEASE_TIME[e.series]}` : ""}`,
       dedupeKey: `bls:${e.series}:${e.date}`,
       sourceUrl: e.url,
     })),
@@ -101,7 +111,7 @@ async function syncBea(store: Pick<Store, "upsertCatalyst">, opts: { today: stri
   for (const [name, series] of Object.entries(BEA_SERIES)) {
     for (const iso of body[name]?.release_dates ?? []) {
       const date = nyDate(iso);
-      if (date) rows.push({ date, title: `US ${series}: ${name}`, dedupeKey: `bea:${series}:${date}`, sourceUrl: BEA_SCHEDULE_URL });
+      if (date) rows.push({ date, title: `US ${series}: ${name} · ${RELEASE_TIME[series]}`, dedupeKey: `bea:${series}:${date}`, sourceUrl: BEA_SCHEDULE_URL });
     }
   }
   return upsertWindow(store, opts, rows);
@@ -143,7 +153,7 @@ async function syncFomc(store: Pick<Store, "upsertCatalyst">, opts: { today: str
     parseFomcMeetings(html, Number(opts.today.slice(0, 4))).map((mtg) => ({
       date: mtg.dateStart,
       dateEnd: mtg.dateEnd,
-      title: `FOMC rate decision ${fmt(mtg.dateEnd)} (meeting ${fmt(mtg.dateStart)}–${fmt(mtg.dateEnd)})${mtg.sep ? " + SEP" : ""}`,
+      title: `FOMC rate decision ${fmt(mtg.dateEnd)} (meeting ${fmt(mtg.dateStart)}–${fmt(mtg.dateEnd)})${mtg.sep ? " + SEP" : ""} · decision 2:00 PM ET`,
       dedupeKey: `fed:fomc:${mtg.dateStart}`,
       sourceUrl: FOMC_URL,
     })),

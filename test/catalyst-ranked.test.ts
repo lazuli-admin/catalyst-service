@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rankCatalysts } from "../src/catalysts/ranked.js";
+import { normalizeCompany, rankCatalysts } from "../src/catalysts/ranked.js";
 import type { Catalyst } from "../src/types.js";
 
 const TODAY = "2026-03-01";
@@ -31,7 +31,7 @@ function cat(overrides: Partial<Catalyst> = {}): Catalyst {
 describe("rankCatalysts", () => {
   it("scores weight x certainty x confidence (no lead-time multiplier) and sorts by score desc then date", () => {
     const rows = rankCatalysts(
-      [cat({ id: "a" }), cat({ id: "b", dateStart: "2026-03-20", dateEnd: "2026-03-24", datePrecision: "window", confidence: 0.5 }), cat({ id: "c", kind: "regulatory_decision" })],
+      [cat({ id: "a" }), cat({ id: "b", ticker: "AMD", title: "AMD earnings (Q1)", dateStart: "2026-03-20", dateEnd: "2026-03-24", datePrecision: "window", confidence: 0.5 }), cat({ id: "c", kind: "regulatory_decision" })],
       { asOf: TODAY, watchlist: [] },
     );
     expect(rows.map((r) => r.id)).toEqual(["a", "c", "b"]);
@@ -59,9 +59,10 @@ describe("rankCatalysts", () => {
   });
 
   it("focus watchlist tickers get score x2 and focus: true (ticker or affectedTicker)", () => {
-    const plain = rankCatalysts([cat({ ticker: "SMOL" }), cat({ ticker: null, affectedTickers: ["DOCN"] })], { asOf: TODAY, watchlist: [] });
+    const docu = { ticker: null, affectedTickers: ["DOCN"], title: "Docusign earnings (Q2)" };
+    const plain = rankCatalysts([cat({ ticker: "SMOL" }), cat(docu)], { asOf: TODAY, watchlist: [] });
     expect(plain.every((r) => !r.focus)).toBe(true);
-    const rows = rankCatalysts([cat({ ticker: "SMOL" }), cat({ ticker: null, affectedTickers: ["DOCN"] })], { asOf: TODAY });
+    const rows = rankCatalysts([cat({ ticker: "SMOL" }), cat(docu)], { asOf: TODAY });
     const focused = rows.filter((r) => r.focus);
     expect(focused.map((r) => r.ticker ?? r.affectedTickers[0])).toEqual(["DOCN"]);
     expect(focused[0]!.score).toBeCloseTo(rows.find((r) => !r.focus)!.score * 2);
@@ -111,25 +112,34 @@ describe("rankCatalysts", () => {
     expect(rows.map((r) => r.title)).toEqual(["US CPI: October inflation print", "US midterm elections", "US Retail Sales"]);
   });
 
-  it("collapses class-share earnings (BRK.A/BRK.B) to one row per date, keeping the alphabetically last class", () => {
+  it("collapses class-share earnings (BRK.A/BRK.B, FOXA/FOX) by date+normalized company name, keeping the higher score (ties: alphabetically last ticker)", () => {
     const rows = rankCatalysts(
       [
-        cat({ id: "a1", ticker: "BRK.A", title: "Berkshire A earnings", dateStart: "2026-03-25" }),
-        cat({ id: "b1", ticker: "BRK.B", title: "Berkshire B earnings", dateStart: "2026-03-25" }),
-        cat({ id: "a2", ticker: "BRK.A", title: "Berkshire A earnings", dateStart: "2026-03-26" }),
-        cat({ id: "x1", ticker: "MSFT", title: "Microsoft earnings", dateStart: "2026-03-25" }),
+        cat({ id: "a1", ticker: "BRK.A", title: "Berkshire Hathaway Inc. earnings (Q1 2026)", dateStart: "2026-03-25" }),
+        cat({ id: "b1", ticker: "BRK.B", title: "Berkshire Hathaway Inc. earnings (Q1 2026)", dateStart: "2026-03-25" }),
+        cat({ id: "f1", ticker: "FOX", title: "Fox Corporation earnings (Q4 2026)", dateStart: "2026-03-25", confidence: 0.5 }),
+        cat({ id: "fa1", ticker: "FOXA", title: "Fox Corporation earnings (Q4 2026)", dateStart: "2026-03-25" }),
+        cat({ id: "a2", ticker: "BRK.A", title: "Berkshire Hathaway Inc. earnings (Q1 2026)", dateStart: "2026-03-26" }),
+        cat({ id: "x1", ticker: "MSFT", title: "Microsoft earnings (FY26 Q3)", dateStart: "2026-03-25" }),
       ],
       { asOf: TODAY, watchlist: [], all: true },
     );
-    expect(rows.map((r) => r.id)).toEqual(["b1", "x1", "a2"]); // BRK.A on 03-25 dropped, other dates untouched
-    expect(rows[0]!.title).toBe("Berkshire B earnings");
+    // BRK.B kept over equal-score BRK.A (alphabetically last); FOXA kept over lower-score FOX; other dates/companies untouched
+    expect(rows.map((r) => r.id)).toEqual(["b1", "fa1", "x1", "a2"]);
+  });
+
+  it("normalizeCompany strips earnings parens, punctuation and corporate/class suffixes", () => {
+    expect(normalizeCompany("Berkshire Hathaway Inc. earnings (Q1 2026)")).toBe("berkshire hathaway");
+    expect(normalizeCompany("Fox Corporation Class A earnings (Q4)")).toBe("fox");
+    expect(normalizeCompany("Liberty Media Corp - Liberty SiriusXM Series A earnings (Q3)")).toBe("liberty media corp liberty siriusxm");
+    expect(normalizeCompany("Nvidia earnings (Q3)")).toBe("nvidia");
   });
 
   it("focus earnings and pinned macro rank above off-watchlist earnings regardless of days out", () => {
     const rows = rankCatalysts(
       [
         cat({ id: "off-now", ticker: "SMOL", dateStart: "2026-03-02" }),
-        cat({ id: "off-far", ticker: "SMOL2", dateStart: "2026-05-20" }),
+        cat({ id: "off-far", ticker: "SMOL2", title: "Otherco earnings (Q2)", dateStart: "2026-05-20" }),
         cat({ id: "focus-far", ticker: "NVDA", dateStart: "2026-05-20" }),
         cat({ id: "cpi-far", ticker: null, kind: "macro", title: "US CPI: May", dateStart: "2026-05-20" }),
         cat({ id: "jolts-far", ticker: null, kind: "macro", title: "US JOLTS: openings", dateStart: "2026-05-20" }),
@@ -146,8 +156,8 @@ describe("rankCatalysts", () => {
     const mv = rankCatalysts(
       [
         cat({ ticker: "NVDA" }),
-        cat({ ticker: "SMOL", id: "s1" }),
-        cat({ ticker: "AAPL", id: "s2" }),
+        cat({ ticker: "SMOL", id: "s1", title: "Smoltech earnings (Q1)" }),
+        cat({ ticker: "AAPL", id: "s2", title: "Apple earnings (FY26 Q2)" }),
       ],
       { asOf: TODAY, watchlist: [], impliedMove: { NVDA: 0.08, SMOL: 0.001, AAPL: 0.5 } },
     );

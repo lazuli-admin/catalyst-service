@@ -29,25 +29,25 @@ export function isPrecise(c: Catalyst): boolean {
   return c.datePrecision === "exact" || (c.datePrecision === "window" && tradingDaysBetween(c.dateStart, c.dateEnd) <= 10);
 }
 
+/** Class-suffix and corporate-suffix words stripped so BRK.A/BRK.B ("Berkshire Hathaway Inc.") share a dedupe key. */
+const STOP_WORDS = new Set(["a", "b", "c", "class", "series", "inc", "corp", "corporation", "co", "ltd", "plc", "sa", "holdings", "the"]);
+export function normalizeCompany(title: string): string {
+  const words = title
+    .replace(/\s*earnings\s*\([^)]*\)\s*$/i, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean);
+  const base = [...words];
+  while (base.length && STOP_WORDS.has(base.at(-1)!)) base.pop();
+  return (base.length ? base : words).join(" ");
+}
+
 /** Score and bucket catalysts for a ranked default view. Pure. */
 export function rankCatalysts(cats: Catalyst[], opts: { asOf: string; all?: boolean; watchlist?: string[]; impliedMove?: Record<string, number> }): RankedCatalyst[] {
   const watch = new Set((opts.watchlist ?? FOCUS_WATCHLIST).map((s) => s.toUpperCase()));
-  // Class shares (BRK.A/BRK.B) collapse to one earnings row per date, keeping the alphabetically last class.
-  const byClass = new Map<string, Catalyst[]>();
-  for (const c of cats) {
-    const m = c.kind === "earnings" ? /^(.+)\.[A-Z]$/.exec(c.ticker ?? "") : null;
-    if (m) {
-      const key = `${c.dateStart}|${m[1]}`;
-      (byClass.get(key) ?? byClass.set(key, []).get(key)!).push(c);
-    }
-  }
-  const dropClass = new Set<string>();
-  for (const list of byClass.values()) {
-    const keep = [...list].sort((a, b) => a.ticker!.localeCompare(b.ticker!)).at(-1)!;
-    for (const c of list) if (c !== keep) dropClass.add(c.id);
-  }
   const ranked = cats
-    .filter((c) => !dropClass.has(c.id))
     .filter((c) => {
       if (opts.all) return true;
       // Default view: decision-grade, precisely-dated upcoming events, plus pinned macro/elections.
@@ -74,8 +74,18 @@ export function rankCatalysts(cats: Catalyst[], opts: { asOf: string; all?: bool
         ...(im != null ? { impliedMove: im } : {}),
       };
     });
+  // Class shares (BRK.A/BRK.B, FOXA/FOX, NWSA/NWS...) collapse to one earnings row per date+company, keeping the higher score (ties: alphabetically last ticker).
+  const best = new Map<string, RankedCatalyst>();
+  for (const r of ranked) {
+    if (r.kind !== "earnings") continue;
+    const key = `${r.dateStart}|${normalizeCompany(r.title)}`;
+    const cur = best.get(key);
+    if (!cur || r.score > cur.score || (r.score === cur.score && (r.ticker ?? "") > (cur.ticker ?? ""))) best.set(key, r);
+  }
   const kindRank = (k: Catalyst["kind"]) => (k === "macro" ? 0 : k === "election" ? 1 : 2);
-  return ranked.sort(
+  return ranked
+    .filter((r) => r.kind !== "earnings" || best.get(`${r.dateStart}|${normalizeCompany(r.title)}`) === r)
+    .sort(
     (a, b) =>
       b.score - a.score ||
       kindRank(a.kind) - kindRank(b.kind) ||

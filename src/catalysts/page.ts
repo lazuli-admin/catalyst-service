@@ -139,7 +139,8 @@ export function renderCalendarPage(opts: { cats: Catalyst[]; asOf: string; all: 
           return `<li>${eventDate} (${esc(c.datePrecision)}) ${eventKind} ${eventTitle} ${eventSource}</li>`;
         })
         .join("");
-      const names = [...new Set(mc.events.map(shortName))].join(" + ");
+      // A BIS rule dominating a cluster gets a fixed label instead of the joined short names.
+      const names = mc.events.some((c) => c.title.startsWith("BIS")) ? "BIS export controls · semis" : [...new Set(mc.events.map(shortName))].join(" + ");
       
       const k = mc.kinds.length;
       const days = Math.round((Date.parse(`${mc.start}T00:00:00Z`) - Date.parse(`${opts.asOf}T00:00:00Z`)) / 86_400_000);
