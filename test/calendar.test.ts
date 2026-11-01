@@ -26,7 +26,7 @@ const cat = (overrides: Partial<CatalystInput>): CatalystInput => ({
   dedupeKey: overrides.title ?? "k",
   ...overrides,
 });
-const full = (c: CatalystInput): Catalyst => ({ ...c, id: c.dedupeKey, datePrecision: "exact", impactWeight: null, createdAt: c.dateStart, updatedAt: c.dateStart }) as Catalyst;
+const full = (c: CatalystInput): Catalyst => ({ ...c, id: c.dedupeKey, datePrecision: c.datePrecision ?? "exact", impactWeight: null, createdAt: c.dateStart, updatedAt: c.dateStart }) as Catalyst;
 
 beforeAll(async () => {
   process.env.CATALYST_API_KEY = KEY;
@@ -256,6 +256,35 @@ describe("renderCalendarPage", () => {
     });
     expect(html).toContain("Likely affected: A&lt;b&gt;");
     expect(html).not.toContain("A<b>");
+  });
+
+  it("renders readable cluster summary and per-event date certainty", () => {
+    const wk = weekSunday("2026-11-10");
+    const wd = (i: number) => new Date(Date.parse(wk) + i * 86_400_000).toISOString().slice(0, 10);
+    const html = renderCalendarPage({
+      cats: [
+        full(cat({ ticker: "NVDA", title: "Q3 earnings", kind: "earnings", dateStart: wd(3), dateEnd: wd(3), sourceUrl: null, dedupeKey: "sum-1" })),
+        full(cat({
+          ticker: null,
+          title: "BIS affiliates rule back in force Nov 11 (suspension ends Nov 10) — Suspension of Export Controls",
+          kind: "rule_effective",
+          dateStart: wd(4),
+          dateEnd: wd(4),
+          datePrecision: "window",
+          affectedTickers: ["NVDA"],
+          sourceUrl: null,
+          dedupeKey: "sum-2",
+        })),
+      ],
+      asOf: wk,
+      all: false,
+    });
+    const summary = html.match(/<details class="cluster"><summary>([^<]*)<\/summary>/);
+    expect(summary).not.toBeNull();
+    expect(summary![1]).toMatch(/^NVDA earnings \+ BIS affiliates rule · \d+\.\d · Nov 11–12$/);
+    expect(html).toContain(`${wd(3)} (exact) earnings Q3 earnings`);
+    expect(html).toContain(`${wd(4)} (window) rule_effective`);
+    expect(html).not.toContain("<script>");
   });
 
   it("escapes cluster ticker with HTML characters", () => {

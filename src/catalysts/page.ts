@@ -37,6 +37,19 @@ function chip(r: Ranked, asOf: string): string {
   return `<div class="chip ${kind}">${flag} ${name}${esc(r.title)} <span class="until">${esc(until)}</span>${source}</div>`;
 }
 
+/** Short name for a cluster summary: "NVDA earnings" for ticked events, trimmed rule titles for tickerless ones. */
+const shortName = (c: Catalyst) =>
+  c.ticker
+    ? `${c.ticker} ${c.kind.replace(/_/g, " ")}`
+    : c.title.split(" — ")[0]!.replace(/ back in force\b.*$/, "").replace(/:$/, "").trim();
+
+/** "Nov 10–17" within one month, "Nov 10 – Dec 1" across months. */
+const dateSpan = (start: string, end: string) => {
+  const [, sm = 1, sd = 1] = start.split("-").map(Number);
+  const [, em = 1, ed = 1] = end.split("-").map(Number);
+  return sm === em ? `${MONTHS[sm - 1]} ${sd}–${ed}` : `${MONTHS[sm - 1]} ${sd} – ${MONTHS[em - 1]} ${ed}`;
+};
+
 /** Server-rendered weekly calendar page over ranked catalysts. Pure; all text is HTML-escaped. */
 export function renderCalendarPage(opts: { cats: Catalyst[]; asOf: string; all: boolean; week?: string; hide?: string }): string {
   // All-or-nothing: any invalid token drops the whole hide param, so bad input renders as no-hide.
@@ -66,17 +79,18 @@ export function renderCalendarPage(opts: { cats: Catalyst[]; asOf: string; all: 
       const startDate = cluster.start;
       const endDate = cluster.end;
       
-      // Build events list
-      const events = d.items
-        .filter(i => i.catalyst.dateStart >= startDate && i.catalyst.dateStart <= endDate)
+      // Build events list, showing each event's date certainty (exact / window / estimated)
+      const clusterEvents = d.items.filter(i => i.catalyst.dateStart >= startDate && i.catalyst.dateStart <= endDate);
+      const events = clusterEvents
         .map(i => {
           const eventDate = i.catalyst.dateStart;
           const eventKind = i.catalyst.kind;
           const eventTitle = esc(i.catalyst.title);
           const eventSource = i.catalyst.sourceUrl ? `<a href="${safeHref(i.catalyst.sourceUrl)!}" target="_blank" rel="noopener">source</a>` : "";
-          return `<li>${eventDate} ${eventKind} ${eventTitle} ${eventSource}</li>`;
+          return `<li>${eventDate} (${esc(i.catalyst.datePrecision)}) ${eventKind} ${eventTitle} ${eventSource}</li>`;
         })
         .join("");
+      const names = [...new Set(clusterEvents.map(i => shortName(i.catalyst)))].join(" + ");
       
       const k = kinds.length;
       const days = Math.round((Date.parse(`${cluster.start}T00:00:00Z`) - Date.parse(`${opts.asOf}T00:00:00Z`)) / 86_400_000);
@@ -85,7 +99,7 @@ export function renderCalendarPage(opts: { cats: Catalyst[]; asOf: string; all: 
       const affectedTickers = esc(d.items.flatMap(i => i.catalyst.affectedTickers).filter((v, i, a) => a.indexOf(v) === i).join(", "));
       const themes = esc(d.items.flatMap(i => i.catalyst.themes).filter((v, i, a) => a.indexOf(v) === i).join(", "));
       
-      return `<details class="cluster"><summary>${esc(d.ticker)}, ${d.score.toFixed(1)}, ${esc(kinds.join(", "))}, ${esc(startDate)} to ${esc(endDate)}</summary>
+      return `<details class="cluster"><summary>${esc(names)} · ${d.score.toFixed(1)} · ${esc(dateSpan(startDate, endDate))}</summary>
         <ul>${events}</ul>
         <p>Why material: ${whyMaterial}</p>
         <p>Likely affected: ${affectedTickers || "none"}; Themes: ${themes || "none"}</p>

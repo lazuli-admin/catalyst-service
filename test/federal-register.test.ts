@@ -25,7 +25,7 @@ describe("syncFederalRegister", () => {
       [BIS]: {
         results: [
           {
-            title: "Suspension of Certain Export Controls",
+            title: "Suspension of Export Controls on Affiliates of Entity List Companies",
             effective_on: "2025-11-10",
             publication_date: "2025-11-12",
             html_url: "https://www.federalregister.gov/d/2025-12345",
@@ -40,18 +40,18 @@ describe("syncFederalRegister", () => {
     const rows = catalysts(s);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      title: "BIS: ends — Suspension of Certain Export Controls",
+      title: "BIS affiliates rule back in force Nov 10 (suspension ends Nov 9) — Suspension of Export Controls on Affiliates of Entity List Companies",
       kind: "rule_effective",
       status: "scheduled",
-      dateStart: "2026-11-09",
-      dateEnd: "2026-11-09",
+      dateStart: "2026-11-10",
+      dateEnd: "2026-11-10",
       datePrecision: "exact",
       confidence: 0.9,
       themes: ["semiconductor export controls"],
       affectedTickers: ["NVDA", "AMD", "AMAT", "LRCX", "KLAC", "ASML", "TSM", "MU"],
       sourceTier: 1,
       sourceUrl: "https://www.federalregister.gov/d/2025-12345",
-      dedupeKey: "fr:2025-12345:2026-11-09",
+      dedupeKey: "fr:2025-12345:2026-11-10",
     });
   });
 
@@ -59,9 +59,9 @@ describe("syncFederalRegister", () => {
     const fetchImpl = mockFetch({
       [BIS]: {
         results: [
-          { title: "Future rule", effective_on: "2026-11-05", html_url: "https://x/1", abstract: "", document_number: "doc-1" },
-          { title: "Dual rule", effective_on: "2026-11-06", html_url: "https://x/2", abstract: "ends November 9, 2026", document_number: "doc-2" },
-          { title: "Dup rule", effective_on: "2026-11-07", html_url: "https://x/3", abstract: "expires November 7, 2026", document_number: "doc-3" },
+          { title: "Future semiconductor rule", effective_on: "2026-11-05", html_url: "https://x/1", abstract: "", document_number: "doc-1" },
+          { title: "Dual rule on integrated circuits", effective_on: "2026-11-06", html_url: "https://x/2", abstract: "ends November 9, 2026", document_number: "doc-2" },
+          { title: "Dup rule for a foundry", effective_on: "2026-11-07", html_url: "https://x/3", abstract: "expires November 6, 2026", document_number: "doc-3" },
         ],
       },
     });
@@ -69,10 +69,10 @@ describe("syncFederalRegister", () => {
     await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
     const rows = catalysts(s);
     expect(rows.map((r) => [r.title, r.dateStart])).toEqual([
-      ["Future rule", "2026-11-05"],
-      ["Dual rule", "2026-11-06"],
-      ["BIS: ends — Dual rule", "2026-11-09"],
-      ["Dup rule", "2026-11-07"],
+      ["Future semiconductor rule", "2026-11-05"],
+      ["Dual rule on integrated circuits", "2026-11-06"],
+      ["BIS: rule back in force Nov 10 (suspension ends Nov 9) — Dual rule on integrated circuits", "2026-11-10"],
+      ["Dup rule for a foundry", "2026-11-07"],
     ]);
     expect(rows.every((r) => r.dedupeKey.startsWith("fr:"))).toBe(true);
   });
@@ -105,11 +105,31 @@ describe("syncFederalRegister", () => {
     expect(catalysts(s)).toHaveLength(0);
   });
 
+  it("BIS rules outside semiconductor topics (e.g. silencers, mufflers) are dropped entirely", async () => {
+    const fetchImpl = mockFetch({
+      [BIS]: {
+        results: [
+          {
+            title: "Implementation of EAR Export Controls on Silencers, Mufflers",
+            effective_on: "2026-11-05",
+            html_url: "u",
+            abstract: "",
+            document_number: "sil-1",
+          },
+          { title: "Advanced computing chip rule", effective_on: "2026-11-06", html_url: "u", abstract: "", document_number: "chip-1" },
+        ],
+      },
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
+    expect(catalysts(s).map((r) => r.title)).toEqual(["Advanced computing chip rule"]);
+  });
+
   it("per-agency errors are logged, never thrown; other agencies still sync", async () => {
     const fetchImpl = mockFetch(
       {
         [BIS]: {
-          results: [{ title: "Good rule", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "g" }],
+          results: [{ title: "Good rule on entity list parties", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "g" }],
         },
         [FTC]: { results: [] },
       },
@@ -120,7 +140,7 @@ describe("syncFederalRegister", () => {
     await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch, log: (m) => logs.push(m) });
     expect(logs.some((m) => m.includes("federal register") && m.includes("HTTP 500"))).toBe(true);
     expect(logs.some((m) => m.includes(FTC))).toBe(true);
-    expect(catalysts(s).map((r) => r.title)).toEqual(["Good rule"]);
+    expect(catalysts(s).map((r) => r.title)).toEqual(["Good rule on entity list parties"]);
   });
 });
 

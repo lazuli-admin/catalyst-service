@@ -1,4 +1,4 @@
-import { certainty, KIND_WEIGHTS, LEAD_MULTIPLIERS, leadBucket, tradingDaysBetween, type LeadBucket } from "./density.js";
+import { certainty, KIND_WEIGHTS, leadBucket, tradingDaysBetween, type LeadBucket } from "./density.js";
 import type { Catalyst } from "../types.js";
 
 export interface RankedCatalyst extends Catalyst {
@@ -44,16 +44,18 @@ export function rankCatalysts(cats: Catalyst[], opts: { asOf: string; all?: bool
     .map((c) => {
       const bucket = leadBucket(c.dateStart, opts.asOf);
       const focus = (c.ticker !== null && watch.has(c.ticker)) || c.affectedTickers.some((t) => watch.has(t));
+      const pinned = isPinned(c);
       const im = c.kind === "earnings" ? opts.impliedMove?.[c.ticker ?? ""] : undefined;
-      let score = KIND_WEIGHTS[c.kind] * certainty(c) * LEAD_MULTIPLIERS[bucket] * c.confidence;
-      if (focus) score *= 2;
+      // Lead-time multiplier removed (badges dropped as unverifiable); pinned macro carries weight 3.
+      let score = (pinned && c.kind === "macro" ? 3 : KIND_WEIGHTS[c.kind]) * certainty(c) * c.confidence;
+      if (focus || pinned) score *= 2;
       if (im != null) score *= Math.min(3, Math.max(0.5, im / 0.05));
       return {
         ...c,
         bucket,
         score,
         ...(focus ? { focus: true } : {}),
-        ...(isPinned(c) ? { pinned: true } : {}),
+        ...(pinned ? { pinned: true } : {}),
         ...(im != null ? { impliedMove: im } : {}),
       };
     });

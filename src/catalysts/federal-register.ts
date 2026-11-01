@@ -19,6 +19,9 @@ export const FR_AGENCIES: Record<string, { label: string; themes: string[]; affe
 /** FCC rules outside these topics (e.g. radio license transfers) are noise. */
 export const FCC_TITLE_RE = /spectrum|broadband|net neutrality|satellite|merger/i;
 
+/** BIS rules outside these topics (e.g. silencers/mufflers export controls) are noise. */
+export const SEMI_TOPIC_RE = /semiconductor|advanced comput|integrated circuit|entity list|affiliat|end-user|artificial intelligence|supercomput|foundry|\bchips?\b/i;
+
 /** Fixed-date political events. */
 export const ELECTIONS: { date: string; title: string }[] = [
   { date: "2026-11-03", title: "US midterm elections" },
@@ -38,6 +41,13 @@ function parseAbstractEndDate(abstract: string): string | null {
   if (!m) return null;
   const ts = Date.parse(`${m[1]!.replace(/\s+/g, " ")} UTC`);
   return Number.isFinite(ts) ? new Date(ts).toISOString().slice(0, 10) : null;
+}
+
+const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "Nov 9" from YYYY-MM-DD. */
+function fmtDate(date: string): string {
+  const [, m = 1, d = 1] = date.split("-").map(Number);
+  return `${MONTH_SHORT[m - 1]} ${d}`;
 }
 
 function horizonEnd(today: string, horizonDays: number): string {
@@ -74,17 +84,28 @@ export async function syncFederalRegister(
         const abstract = typeof row.abstract === "string" ? row.abstract : "";
         if (!title || !documentNumber) continue;
         if (agency.label === "FCC" && !FCC_TITLE_RE.test(title)) continue;
-        // Two candidate dates: the rule's effective date and any expiry/end date stated in the abstract.
-        const candidates = [row.effective_on, parseAbstractEndDate(abstract)].filter(
-          (d): d is string => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= opts.today && d <= end,
-        );
+        if (agency.label === "BIS" && !SEMI_TOPIC_RE.test(`${title} ${abstract}`)) continue;
+        // Effective-date candidates keep the plain title; abstract end dates shift to the NEXT day (rule back in force).
+        const inWindow = (d: string) => d >= opts.today && d <= end;
+        const candidates: { date: string; isEnd: boolean }[] = [];
+        if (typeof row.effective_on === "string" && /^\d{4}-\d{2}-\d{2}$/.test(row.effective_on) && inWindow(row.effective_on)) {
+          candidates.push({ date: row.effective_on, isEnd: false });
+        }
+        const abstractEnd = parseAbstractEndDate(abstract);
+        if (abstractEnd) {
+          const next = new Date(Date.parse(`${abstractEnd}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+          if (inWindow(next)) candidates.push({ date: next, isEnd: true });
+        }
         const seen = new Set<string>();
-        for (const date of candidates) {
+        for (const { date, isEnd } of candidates) {
           if (seen.has(date)) continue;
           seen.add(date);
+          const display = isEnd
+            ? `${/affiliat|end-user/i.test(title) ? `${agency.label} affiliates rule` : `${agency.label}: rule`} back in force ${fmtDate(date)} (suspension ends ${fmtDate(abstractEnd!)}) — ${title}`
+            : title;
           await store.upsertCatalyst({
             ticker: null,
-            title: date === row.effective_on ? title : `${agency.label}: ends — ${title}`,
+            title: display,
             kind: "rule_effective",
             status: "scheduled",
             dateStart: date,
