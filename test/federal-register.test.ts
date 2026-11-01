@@ -594,6 +594,40 @@ describe("federal register paging and PRESDOCU", () => {
     expect(report!.complete).toBe(false);
     expect(report!.queries.find((q) => q.name === "PRESDOCU")).toMatchObject({ ok: false, error: "HTTP 500" });
   });
+
+  it("PRESDOCU: relevant doc without raw_text_url -> query fails, report incomplete, no purge", async () => {
+    const fetchImpl = mockFetch({
+      PRESDOCU: {
+        results: [
+          {
+            title: "Adjusting Imports of Semiconductors Into the United States",
+            type: "Presidential Document",
+            subtype: "Proclamation",
+            effective_on: null,
+            html_url: "https://www.federalregister.gov/d/2026-26302",
+            abstract: "",
+            document_number: "2026-26302",
+          },
+        ],
+        total_pages: 1,
+      },
+    });
+    const s = store();
+    s.listStaleCatalysts.mockResolvedValue([{ dedupeKey: "fr:2026-26301:2026-12-04", title: "Stale proclamation row" }]);
+    await syncFederalRegister(s, {
+      ...opts,
+      horizonDays: 60,
+      sleep: async () => {},
+      curatedDocNumbers: new Set(),
+      fetch: fetchImpl as unknown as typeof fetch,
+    });
+    expect(catalysts(s)).toHaveLength(0);
+    const report = getLastFrSyncReport();
+    expect(report!.complete).toBe(false);
+    expect(report!.queries.find((q) => q.name === "PRESDOCU")).toMatchObject({ ok: false, error: expect.stringContaining("missing raw_text_url") });
+    expect(s.listStaleCatalysts).not.toHaveBeenCalled();
+    expect(s.purgeStaleCatalysts).not.toHaveBeenCalled();
+  });
 });
 
 describe("curated FR doc number skipping", () => {

@@ -210,6 +210,49 @@ describe("fr-classify synthetic", () => {
   it("invalid effective_on format is ignored", () => {
     expect(classify(base({ effective_on: "20 November 2026" }), WINDOW)).toEqual([]);
   });
+
+  it('proposed rule with effective_on == comments_close_on -> one comment_close row without "(replies"', () => {
+    const rows = classify(
+      base({ type: "Proposed Rule", effective_on: "2026-12-01", comments_close_on: "2026-12-01" }),
+      WINDOW,
+    );
+    expect(rows).toHaveLength(1);
+    const r = rows[0]!;
+    expect(r.kind).toBe("comment_close");
+    expect(r.date).toBe("2026-12-01");
+    expect(r.dedupeKey).toBe("fr:2026-1-TEST:comments:2026-12-01");
+    expect(r.title).not.toContain("(replies");
+  });
+
+  it('proposed rule with effective_on < comments_close_on -> initial deadline titled "(replies Dec 15)"', () => {
+    const rows = classify(
+      base({ type: "Proposed Rule", effective_on: "2026-12-01", comments_close_on: "2026-12-15" }),
+      WINDOW,
+    );
+    expect(rows).toHaveLength(1);
+    const r = rows[0]!;
+    expect(r.kind).toBe("comment_close");
+    expect(r.date).toBe("2026-12-01");
+    expect(r.dedupeKey).toBe("fr:2026-1-TEST:comments:2026-12-01");
+    expect(r.title).toContain("(replies Dec 15)");
+  });
+
+  it("presidential: only in-window operative dates are emitted", () => {
+    const body =
+      "do hereby proclaim as follows: (1) Effective on or after 12:01 a.m. eastern time on October 1, 2026, the duty applies. (2) Effective on or after 12:01 a.m. eastern time on December 1, 2026, the higher rate applies.";
+    const rows = classify(base({ type: "Presidential Document", subtype: "Proclamation", bodyText: body }), WINDOW);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe("presidential_action");
+    expect(rows[0]!.date).toBe("2026-12-01");
+  });
+
+  it("presidential: a single out-of-window operative date (past or beyond end) yields no rows", () => {
+    for (const date of ["October 1, 2026", "June 1, 2027"]) {
+      const body = `do hereby proclaim as follows: (1) Effective on or after 12:01 a.m. eastern time on ${date}, the duty applies.`;
+      const rows = classify(base({ type: "Presidential Document", subtype: "Proclamation", bodyText: body }), WINDOW);
+      expect(rows).toEqual([]);
+    }
+  });
 });
 
 // Deterministic LCG so property runs are reproducible.
