@@ -4,13 +4,17 @@ import { computeFrRecall, rowIsFetched, type FrBlindRow } from "../src/recall.js
 import { isRelevant, topicTags, TOPICS } from "../src/topics.js";
 import { TOPIC_KEEP_EXAMPLES } from "./fixtures/topic-keep-examples.js";
 
-// both fr-blind fixtures are regression sets (may have informed tuning)
+// fr-blind-1 and fr-blind-2 are regression sets (may have informed tuning);
+// fr-blind-3 is held out
 
 const blind1 = JSON.parse(
   readFileSync(new URL("./fixtures/fr-blind-1.json", import.meta.url), "utf8"),
 ) as FrBlindRow[];
 const blind2 = JSON.parse(
   readFileSync(new URL("./fixtures/fr-blind-2.json", import.meta.url), "utf8"),
+) as FrBlindRow[];
+const blind3 = JSON.parse(
+  readFileSync(new URL("./fixtures/fr-blind-3.json", import.meta.url), "utf8"),
 ) as FrBlindRow[];
 
 interface FrRegressionRow {
@@ -44,6 +48,20 @@ const KNOWN_MISSES: Record<string, string> = {
   "2026-18141": PRESIDENTIAL_KEEP_DEFAULT_MISS,
   "2026-20320": PRESIDENTIAL_KEEP_DEFAULT_MISS,
   "2026-21666": PRESIDENTIAL_KEEP_DEFAULT_MISS,
+  // fr-blind-3
+  "2026-19416": PRESIDENTIAL_KEEP_DEFAULT_MISS,
+  "2025-23569": PRESIDENTIAL_KEEP_DEFAULT_MISS,
+  "2026-16125": PRESIDENTIAL_KEEP_DEFAULT_MISS,
+  "2026-03889":
+    "FCC filing-window proposal kept via radio-broadcast topic; no company or market impact (known FP)",
+  "2026-20714":
+    "clearing agency registration kept by design (matches clearing/registration topic) (known FP)",
+  "2026-03237":
+    "SRO crypto-options position-limit filing kept via crypto topic (known FP)",
+  "2026-02458":
+    "FTC consent order analysis to aid public comment; parties not in preset company universe (known FN)",
+  "2026-12612":
+    "FTC consent order analysis to aid public comment; parties not in preset company universe (known FN)",
 };
 
 describe("fr-blind regression gates", () => {
@@ -64,11 +82,25 @@ describe("fr-blind regression gates", () => {
     );
     console.log(`borderline: ${borderline.length} rows (excluded from gate)`);
   });
+
+  test("fr-blind-3 recall gate: fetched recall >= 0.8 (borderline excluded)", () => {
+    const { fetched, notFetched, borderline } = computeFrRecall(blind3);
+    expect(fetched.recall).toBeGreaterThanOrEqual(0.8);
+    console.log(
+      `not-fetched: tp=${notFetched.tp} fn=${notFetched.fn} fp=${notFetched.fp} tn=${notFetched.tn} recall=${notFetched.recall.toFixed(3)} precision=${notFetched.precision.toFixed(3)}`,
+    );
+    console.log(`borderline: ${borderline.length} rows (excluded from gate)`);
+  });
 });
 
 describe("fr-blind per-doc", () => {
-  for (const fixtureName of ["fr-blind-1", "fr-blind-2"] as const) {
-    const rows = fixtureName === "fr-blind-1" ? blind1 : blind2;
+  for (const fixtureName of ["fr-blind-1", "fr-blind-2", "fr-blind-3"] as const) {
+    const rows =
+      fixtureName === "fr-blind-1"
+        ? blind1
+        : fixtureName === "fr-blind-2"
+          ? blind2
+          : blind3;
     const cases = rows
       .filter((row) => row.borderline === false && rowIsFetched(row))
       .map((row) => {
