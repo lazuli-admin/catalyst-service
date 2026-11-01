@@ -25,22 +25,13 @@ const regression = JSON.parse(
 ) as FrRegressionRow[];
 
 const SEC_SRO_MISS =
-  "SEC SRO filing, now fetched (NOTICE for all agencies); dropped by the ^self-regulatory organizations noise rule; labeled relevant (known miss, not pattern-fit)";
+  "SEC SRO filing, fetched; matches no topic after the narrow SRO procedural noise rule (known miss, not pattern-fit)";
 
 const KNOWN_MISSES: Record<string, string> = {
   "2025-19818":
     "USMCA Labor Council meeting notice: matches USMCA topic; meeting notices are not filtered as noise yet (known FP)",
-  "2026-01381": SEC_SRO_MISS,
   "2026-08478": SEC_SRO_MISS,
-  "2026-08679": SEC_SRO_MISS,
-  "2026-11927": SEC_SRO_MISS,
-  "2026-01994": SEC_SRO_MISS,
-  "2026-05475": SEC_SRO_MISS,
-  "2026-01823": SEC_SRO_MISS,
   "2025-23937": SEC_SRO_MISS,
-  "2026-21572": SEC_SRO_MISS,
-  "2026-15003":
-    "Presidential EO on defense supply chains / critical materials, now fetched (PRESDOCU); title has no topic match (known miss, not pattern-fit)",
 };
 
 describe("fr-blind regression gates", () => {

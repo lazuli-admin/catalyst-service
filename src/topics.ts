@@ -29,7 +29,7 @@ export const TOPICS: Topic[] = [
   {
     id: "critical-minerals",
     label: "Critical minerals",
-    patterns: [/critical mineral|rare earth|\bDPAS\b|lithium|cobalt|graphite|gallium|germanium/i],
+    patterns: [/critical mineral|critical materials?|defense (supply chains?|industrial base)|rare earth|\bDPAS\b|lithium|cobalt|graphite|gallium|germanium/i],
     themes: ["critical minerals"],
     affectedTickers: ["MP", "ALB", "LAC"],
   },
@@ -199,6 +199,26 @@ export const TOPICS: Topic[] = [
     themes: ["foreign issuer disclosure"],
     // tickers are hand-curated, illustrative (US-listed foreign private issuers)
     affectedTickers: ["BABA", "PDD", "JD", "BIDU", "NIO"],
+  },
+  {
+    id: "exchange-products-listings",
+    label: "Exchange products & listings",
+    patterns: [
+      // listed crypto/digital-asset ETFs, ETPs, trusts and their shares
+      /(crypto|digital[- ]asset|bitcoin|ether(eum)?|solana)[^.;]{0,60}(ETF|ETP|exchange-traded|trust|shares)/i,
+      /commodity[- ]based trust shares?/i,
+      // options on ETFs/trusts holding crypto
+      /options?[^.;]{0,40}(ETF|trust)[^.]{0,30}(holding|that hold)[^.;]{0,20}(crypto|bitcoin|digital asset)/i,
+      /tokenized securities|tokeniz(ation|ed form)/i,
+      /generic listing (standards|criteria)|continued listing (standards|requirements)/i,
+      /\bevent contracts?\b/i,
+      // index options expiring on additional days (keep scoped to options/expirations)
+      /(options|expir\w*)[^.;]{0,80}(Monday|Tuesday|Wednesday|Thursday|Friday|daily|end-of-month)/i,
+      /position (and|or) exercise limits/i,
+    ],
+    themes: ["exchange products"],
+    // illustrative: COIN, HOOD, CME, ICE, NDAQ, CBOE, IBIT
+    affectedTickers: [],
   },
   {
     id: "china-trade",
