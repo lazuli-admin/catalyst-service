@@ -3,6 +3,7 @@ import type { Store } from "../db.js";
 import { errorMessage } from "../util.js";
 import { isNoise, isRelevant, NOISE_PATTERNS, topicTags } from "../topics.js";
 import { classify, type FrApiDoc } from "./fr-classify.js";
+import { curatedFrDocNumbers } from "./policy.js";
 
 const TIMEOUT_MS = 15_000;
 const FR_REQUEST_DELAY_MS = 250;
@@ -35,7 +36,7 @@ function horizonEnd(today: string, horizonDays: number): string {
 
 export type FrDrop = { dedupeKey: string; title: string; reason: string };
 export type FrQueryReport = { name: string; pages: number; totalPages: number | null; docs: number; ok: boolean; error?: string };
-export type FrSyncReport = { at: string; complete: boolean; count: number; drops: FrDrop[]; queries: FrQueryReport[] };
+export type FrSyncReport = { at: string; complete: boolean; count: number; drops: FrDrop[]; skippedCurated: string[]; queries: FrQueryReport[] };
 let lastFrSyncReport: FrSyncReport | null = null;
 export function getLastFrSyncReport(): FrSyncReport | null {
   return lastFrSyncReport;
@@ -45,9 +46,17 @@ const FR_KINDS = ["rule_effective", "comment_close", "presidential_action", "reg
 
 export async function syncFederalRegister(
   store: Pick<Store, "upsertCatalyst" | "purgeStaleCatalysts" | "listStaleCatalysts">,
-  opts: { today: string; horizonDays: number; fetch?: typeof fetch; log?: (m: string) => void; sleep?: (ms: number) => Promise<void> },
+  opts: {
+    today: string;
+    horizonDays: number;
+    fetch?: typeof fetch;
+    log?: (m: string) => void;
+    sleep?: (ms: number) => Promise<void>;
+    curatedDocNumbers?: Set<string>;
+  },
 ): Promise<void> {
   const fetchImpl = opts.fetch ?? fetch;
+  const curatedDocNumbers = opts.curatedDocNumbers ?? (await curatedFrDocNumbers());
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const log = opts.log ?? (() => {});
   const runStart = new Date().toISOString();
@@ -97,6 +106,7 @@ export async function syncFederalRegister(
     (await fetchResponse(url)).json() as { results?: unknown[]; total_pages?: number };
 
   const queries: FrQueryReport[] = [];
+  const skippedCurated = new Set<string>();
   for (const target of targets) {
     const q: FrQueryReport = { name: target.name, pages: 0, totalPages: null, docs: 0, ok: true };
     try {
@@ -114,6 +124,13 @@ export async function syncFederalRegister(
           const htmlUrl = typeof row.html_url === "string" ? row.html_url : null;
           const abstract = typeof row.abstract === "string" ? row.abstract : "";
           if (!title || !documentNumber) continue;
+          // Curated policy rows already carry this doc (data/policy-events.json); skip to avoid double counting.
+          if (curatedDocNumbers.has(documentNumber)) {
+            skippedCurated.add(documentNumber);
+            dropReasons.set(documentNumber, "curated duplicate");
+            log(`federal register skip ${documentNumber}: cited by curated policy row`);
+            continue;
+          }
           // Relevance is decided by TOPIC, never agency; corrections are already covered by isNoise.
           const doc: FrApiDoc = {
             title,
@@ -195,10 +212,10 @@ export async function syncFederalRegister(
         drops.push({ dedupeKey: row.dedupeKey, title: row.title, reason });
       }
     }
-    lastFrSyncReport = { at: new Date().toISOString(), complete: true, count: drops.length, drops, queries };
+    lastFrSyncReport = { at: new Date().toISOString(), complete: true, count: drops.length, drops, skippedCurated: [...skippedCurated].sort(), queries };
     for (const kind of FR_KINDS) await store.purgeStaleCatalysts(kind, opts.today, runStart, "fr:");
   } else {
-    lastFrSyncReport = { at: new Date().toISOString(), complete: false, count: 0, drops: [], queries };
+    lastFrSyncReport = { at: new Date().toISOString(), complete: false, count: 0, drops: [], skippedCurated: [...skippedCurated].sort(), queries };
   }
 }
 

@@ -1,5 +1,11 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os, { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { catalystDensity } from "../src/catalysts/density.js";
 import { ELECTIONS, FR_AGENCIES, getLastFrSyncReport, syncElections, syncFederalRegister } from "../src/catalysts/federal-register.js";
+import { frDocNumbersFromEvents, syncPolicyEvents } from "../src/catalysts/policy.js";
+import { memoryStore } from "./helpers.js";
 import { isRelevant, topicTags } from "../src/topics.js";
 import type { Catalyst } from "../src/types.js";
 
@@ -586,5 +592,78 @@ describe("federal register paging and PRESDOCU", () => {
     const report = getLastFrSyncReport();
     expect(report!.complete).toBe(false);
     expect(report!.queries.find((q) => q.name === "PRESDOCU")).toMatchObject({ ok: false, error: "HTTP 500" });
+  });
+});
+
+describe("curated FR doc number skipping", () => {
+  const polysiliconDoc = {
+    title: "Adjusting Imports of Polysilicon and Its Derivatives Into the United States Under Section 232",
+    type: "Presidential Document",
+    subtype: "Proclamation",
+    effective_on: null,
+    html_url: "https://www.federalregister.gov/documents/2026/08/11/2026-16400/adjusting-imports-of-polysilicon-and-its-derivatives-into-the-united-states",
+    abstract: "",
+    document_number: "2026-16400",
+    raw_text_url: "https://www.federalregister.gov/documents/full_text/raw/2026-16400.txt",
+  };
+  const proclamationText =
+    "do hereby proclaim as follows: (1) Effective with respect to goods entered on or after 12:01 a.m. eastern time on December 4, 2026, imports of polysilicon shall be subject to minimum import prices plus a 15% duty.";
+
+  it("skips a curated doc: no upsert, skippedCurated reported, pre-existing fr row purged as curated duplicate", async () => {
+    const fetchImpl = mockFetch({ PRESDOCU: { results: [polysiliconDoc], total_pages: 1 }, rawText: proclamationText });
+    const s = store();
+    s.listStaleCatalysts.mockImplementation(async (kind: string) =>
+      kind === "presidential_action"
+        ? [{ dedupeKey: "fr:2026-16400:2026-12-04", title: "Proclamation in effect Dec 4: Adjusting Imports of Polysilicon" }]
+        : [],
+    );
+    await syncFederalRegister(s, { ...opts, horizonDays: 60, fetch: fetchImpl as unknown as typeof fetch, curatedDocNumbers: new Set(["2026-16400"]) });
+    expect(catalysts(s)).toHaveLength(0);
+    expect(fetchImpl).not.toHaveBeenCalledWith(polysiliconDoc.raw_text_url);
+    const report = getLastFrSyncReport();
+    expect(report!.complete).toBe(true);
+    expect(report!.skippedCurated).toEqual(["2026-16400"]);
+    expect(report!.drops).toEqual([
+      { dedupeKey: "fr:2026-16400:2026-12-04", title: "Proclamation in effect Dec 4: Adjusting Imports of Polysilicon", reason: "curated duplicate" },
+    ]);
+  });
+
+  it("FSLR double count: curated policy row + skipped FR doc -> exactly ONE Dec 4 item for FSLR, no cluster bonus", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "fr-curated-"));
+    const file = path.join(dir, "policy-events.json");
+    const event = {
+      id: "s232-polysilicon-effective",
+      date: "2026-12-04",
+      dateEnd: "2026-12-04",
+      precision: "exact",
+      title: "Section 232 polysilicon: minimum import prices plus 15% duty take effect 12:01 a.m. ET (Proclamation, FR 2026-16400)",
+      kind: "rule_effective",
+      sourceUrl: "https://www.federalregister.gov/documents/2026/08/11/2026-16400/adjusting-imports-of-polysilicon-and-its-derivatives-into-the-united-states",
+      themes: ["solar", "polysilicon", "Section 232"],
+      affectedTickers: ["FSLR"],
+    };
+    await writeFile(file, JSON.stringify({ events: [event] }), "utf8");
+    try {
+      const s = await memoryStore();
+      const today = "2026-12-01";
+      await syncPolicyEvents(s, { today, horizonDays: 10, file });
+      const fetchImpl = mockFetch({ PRESDOCU: { results: [polysiliconDoc], total_pages: 1 }, rawText: proclamationText });
+      await syncFederalRegister(s, {
+        today,
+        horizonDays: 10,
+        fetch: fetchImpl as unknown as typeof fetch,
+        sleep: async () => {},
+        curatedDocNumbers: frDocNumbersFromEvents([event]),
+      });
+      const cats = await s.listCatalysts({ from: "2026-12-04", to: "2026-12-04", includeLeads: true });
+      const fslr = catalystDensity(cats, { asOf: today }).find((t) => t.ticker === "FSLR");
+      expect(fslr).toBeDefined();
+      // Exactly one Dec 4 item (the curated policy row) — the FR row was skipped, so no multi-kind cluster bonus.
+      expect(fslr!.items).toHaveLength(1);
+      expect(fslr!.items[0]!.catalyst.dedupeKey).toBe("policy:s232-polysilicon-effective");
+      expect(fslr!.clusters).toHaveLength(0);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
