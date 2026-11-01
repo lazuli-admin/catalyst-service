@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { ELECTIONS, FR_AGENCIES, keepCommentClose, syncElections, syncFederalRegister } from "../src/catalysts/federal-register.js";
+import { ELECTIONS, FR_AGENCIES, syncElections, syncFederalRegister } from "../src/catalysts/federal-register.js";
+import { isRelevant } from "../src/topics.js";
 import type { Catalyst } from "../src/types.js";
 
 const res = (body: unknown, ok = true) => ({ ok, status: ok ? 200 : 500, json: async () => body });
@@ -194,13 +195,13 @@ describe("federal register noise filters", () => {
       [FTC]: {
         results: [
           { title: "Merger Rule Corrections", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "C1-2026-11111" },
-          { title: "Merger Rule", effective_on: "2026-11-06", html_url: "u", abstract: "", document_number: "2026-22222" },
+          { title: "Merger Rule for Pharmaceutical Companies", effective_on: "2026-11-06", html_url: "u", abstract: "", document_number: "2026-22222" },
         ],
       },
     });
     const s = store();
     await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
-    expect(catalysts(s).map((r) => r.title)).toEqual(["Merger Rule"]);
+    expect(catalysts(s).map((r) => r.title)).toEqual(["Merger Rule for Pharmaceutical Companies"]);
   });
 
   it("USTR 'Request for Comments ...' with a 'through' abstract gets no back-in-force event", async () => {
@@ -223,14 +224,14 @@ describe("federal register noise filters", () => {
     expect(catalysts(s)).toEqual([]);
   });
 
-  it("keepCommentClose", () => {
-    expect(keepCommentClose("SEC", "Transfer Agent Rules")).toBe(false);
-    expect(keepCommentClose("SEC", "Proxy Solicitation Modernization")).toBe(true);
-    expect(keepCommentClose("FTC", "Petition for Rulemaking of X")).toBe(false);
-    expect(keepCommentClose("ITA", "Subsidy Programs on Softwood Lumber")).toBe(false);
-    expect(keepCommentClose("ITA", "Section 232 Auto Parts Investigation")).toBe(true);
-    expect(keepCommentClose("USTR", "Anything At All")).toBe(true);
-    expect(keepCommentClose("FTC", "Merger Filing Requirements")).toBe(true);
+  it("isRelevant drops routine noise and keeps topic titles", () => {
+    expect(isRelevant({ title: "Transfer Agent Rules" })).toBe(false);
+    expect(isRelevant({ title: "Proxy Solicitation Modernization" })).toBe(true);
+    expect(isRelevant({ title: "Petition for Rulemaking of X" })).toBe(false);
+    expect(isRelevant({ title: "Subsidy Programs on Softwood Lumber" })).toBe(true);
+    expect(isRelevant({ title: "Section 232 Auto Parts Investigation" })).toBe(true);
+    expect(isRelevant({ title: "Anything At All" })).toBe(false);
+    expect(isRelevant({ title: "Merger Filing Requirements" })).toBe(false);
   });
 });
 
@@ -300,13 +301,13 @@ describe("trade agencies (USTR/ITA/CBP)", () => {
       "u-s-customs-and-border-protection": {
         results: [
           { title: "Quarterly IRS Listing", effective_on: "2026-11-05", html_url: "u", abstract: "irrelevant", document_number: "cbp-1" },
-          { title: "Extension of Import Restrictions Imposing Duties", effective_on: "2026-11-05", html_url: "u", abstract: "cultural antiquities", document_number: "cbp-2" },
+          { title: "Extension of Import Restrictions Imposing Duties on Steel Tariffs", effective_on: "2026-11-05", html_url: "u", abstract: "cultural antiquities", document_number: "cbp-2" },
         ],
       },
     });
     const s = store();
     await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
-    expect(catalysts(s).map((r) => r.title)).toEqual(["Extension of Import Restrictions Imposing Duties"]);
+    expect(catalysts(s).map((r) => r.title)).toEqual(["Extension of Import Restrictions Imposing Duties on Steel Tariffs"]);
   });
 
   it("ITA drops routine review paperwork unless Section 232", async () => {
@@ -329,7 +330,7 @@ describe("SEC", () => {
     const fetchImpl = mockFetch({
       "securities-and-exchange-commission": {
         results: [
-          { title: "Amendments to Regulation SBSR", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "sec-1" },
+          { title: "Amendments to Regulation SBSR for Shareholder Proposals", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "sec-1" },
           { title: "Self-Regulatory Organizations; NYSE; Order Approving", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "sec-2" },
           { title: "Sunshine Act Meeting Notice", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "sec-3" },
         ],
@@ -337,7 +338,7 @@ describe("SEC", () => {
     });
     const s = store();
     await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
-    expect(catalysts(s).map((r) => r.title)).toEqual(["Amendments to Regulation SBSR"]);
+    expect(catalysts(s).map((r) => r.title)).toEqual(["Amendments to Regulation SBSR for Shareholder Proposals"]);
     const url = String(fetchImpl.mock.calls.find(([u]) => String(u).includes("securities-and-exchange"))![0]);
     expect(url).not.toContain("NOTICE");
   });
