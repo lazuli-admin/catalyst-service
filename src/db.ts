@@ -915,6 +915,13 @@ export class Store {
   }
 
   // Catalysts
+  /** Delete legacy Nasdaq-sourced macro rows; primary feeds own kind='macro' via bls:/bea:/fed: dedupe keys. */
+  async purgeLegacyMacro(): Promise<void> {
+    await this.run(
+      "DELETE FROM catalysts WHERE kind = 'macro' AND dedupe_key NOT LIKE 'bls:%' AND dedupe_key NOT LIKE 'bea:%' AND dedupe_key NOT LIKE 'fed:%'",
+    );
+  }
+
   /** Insert or update by dedupeKey; id and createdAt are kept on conflict. */
   async upsertCatalyst(c: CatalystInput): Promise<Catalyst> {
     const updatedAt = nowIso();

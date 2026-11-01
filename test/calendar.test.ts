@@ -26,7 +26,7 @@ const cat = (overrides: Partial<CatalystInput>): CatalystInput => ({
   dedupeKey: overrides.title ?? "k",
   ...overrides,
 });
-const full = (c: CatalystInput): Catalyst => ({ ...c, id: c.dedupeKey, datePrecision: "exact", impactWeight: null, createdAt: c.dateStart, updatedAt: c.dateStart }) as Catalyst;
+const full = (c: CatalystInput): Catalyst => ({ ...c, id: c.dedupeKey, datePrecision: c.datePrecision ?? "exact", impactWeight: null, createdAt: c.dateStart, updatedAt: c.dateStart }) as Catalyst;
 
 beforeAll(async () => {
   process.env.CATALYST_API_KEY = KEY;
@@ -54,6 +54,16 @@ describe("renderCalendarPage", () => {
     const base = renderCalendarPage({ cats: [], asOf: today, all: false });
     const grid = (h: string) => h.slice(h.indexOf('class="week"'));
     expect(grid(base)).toBe(grid(sunday));
+  });
+
+  it("shows last refreshed as the max updatedAt minute (or never) and ✓ on on-pills", () => {
+    const today = new Date().toISOString().slice(0, 10);
+    expect(renderCalendarPage({ cats: [], asOf: today, all: false })).toContain("Last refreshed: never");
+    const c = { ...full(cat({ dateStart: inWeek(6), dateEnd: inWeek(6), dedupeKey: "rf" })), updatedAt: "2026-02-12T09:05:33.000Z" };
+    const html = renderCalendarPage({ cats: [c], asOf: today, all: false });
+    expect(html).toContain("Last refreshed: 2026-02-12T09:05 UTC");
+    expect(html).toContain("✓ Earnings");
+    expect(html).toContain("text-decoration:line-through");
   });
 
   it("renders prev/today/next links preserving all=1", () => {
@@ -153,9 +163,9 @@ describe("renderCalendarPage", () => {
   it("renders filter pills and styles shown ones filled with aria-pressed", () => {
     const today = new Date().toISOString().slice(0, 10);
     const html = renderCalendarPage({ cats: [], asOf: today, all: false });
-    expect(html).toContain('class="pill pill-on" aria-pressed="true" href="?hide=earnings">Earnings</a>');
-    expect(html).toContain('class="pill pill-on" aria-pressed="true" href="?hide=macro">Macro</a>');
-    expect(html).toContain('class="pill pill-on" aria-pressed="true" href="?hide=global">Global</a>');
+    expect(html).toContain('class="pill pill-on" aria-pressed="true" href="?hide=earnings">✓ Earnings</a>');
+    expect(html).toContain('class="pill pill-on" aria-pressed="true" href="?hide=macro">✓ Macro</a>');
+    expect(html).toContain('class="pill pill-on" aria-pressed="true" href="?hide=global">✓ Global</a>');
   });
 
   it("hide=earnings removes earnings chips from the week grid but keeps macro and global", () => {
@@ -195,8 +205,8 @@ describe("renderCalendarPage", () => {
     const next = new Date(Date.parse(`${sun}T00:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10);
     const html = renderCalendarPage({ cats: [], asOf: today, all: true, week: sun, hide: "earnings" });
     expect(html).toContain(`aria-pressed="false" href="?week=${sun}&all=1">Earnings</a>`);
-    expect(html).toContain(`aria-pressed="true" href="?week=${sun}&all=1&hide=earnings,macro">Macro</a>`);
-    expect(html).toContain(`aria-pressed="true" href="?week=${sun}&all=1&hide=earnings,global">Global</a>`);
+    expect(html).toContain(`aria-pressed="true" href="?week=${sun}&all=1&hide=earnings,macro">✓ Macro</a>`);
+    expect(html).toContain(`aria-pressed="true" href="?week=${sun}&all=1&hide=earnings,global">✓ Global</a>`);
     expect(html).toContain(`href="?week=${prev}&all=1&hide=earnings"`);
     expect(html).toContain(`href="?week=${next}&all=1&hide=earnings"`);
     expect(html).toContain('href="?all=1&hide=earnings"');
@@ -256,6 +266,35 @@ describe("renderCalendarPage", () => {
     });
     expect(html).toContain("Likely affected: A&lt;b&gt;");
     expect(html).not.toContain("A<b>");
+  });
+
+  it("renders readable cluster summary and per-event date certainty", () => {
+    const wk = weekSunday("2026-11-10");
+    const wd = (i: number) => new Date(Date.parse(wk) + i * 86_400_000).toISOString().slice(0, 10);
+    const html = renderCalendarPage({
+      cats: [
+        full(cat({ ticker: "NVDA", title: "Q3 earnings", kind: "earnings", dateStart: wd(3), dateEnd: wd(3), sourceUrl: null, dedupeKey: "sum-1" })),
+        full(cat({
+          ticker: null,
+          title: "BIS affiliates rule back in force Nov 11 (suspension ends Nov 10) — Suspension of Export Controls",
+          kind: "rule_effective",
+          dateStart: wd(4),
+          dateEnd: wd(4),
+          datePrecision: "window",
+          affectedTickers: ["NVDA"],
+          sourceUrl: null,
+          dedupeKey: "sum-2",
+        })),
+      ],
+      asOf: wk,
+      all: false,
+    });
+    const summary = html.match(/<details class="cluster"><summary>([^<]*)<\/summary>/);
+    expect(summary).not.toBeNull();
+    expect(summary![1]).toMatch(/^NVDA earnings \+ BIS affiliates rule · \d+\.\d · Nov 11–12$/);
+    expect(html).toContain(`${wd(3)} (exact) earnings Q3 earnings`);
+    expect(html).toContain(`${wd(4)} (window) rule_effective`);
+    expect(html).not.toContain("<script>");
   });
 
   it("escapes cluster ticker with HTML characters", () => {

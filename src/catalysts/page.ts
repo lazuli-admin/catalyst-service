@@ -37,6 +37,19 @@ function chip(r: Ranked, asOf: string): string {
   return `<div class="chip ${kind}">${flag} ${name}${esc(r.title)} <span class="until">${esc(until)}</span>${source}</div>`;
 }
 
+/** Short name for a cluster summary: "NVDA earnings" for ticked events, trimmed rule titles for tickerless ones. */
+const shortName = (c: Catalyst) =>
+  c.ticker
+    ? `${c.ticker} ${c.kind.replace(/_/g, " ")}`
+    : c.title.split(" — ")[0]!.replace(/ back in force\b.*$/, "").replace(/:$/, "").trim();
+
+/** "Nov 10–17" within one month, "Nov 10 – Dec 1" across months. */
+const dateSpan = (start: string, end: string) => {
+  const [, sm = 1, sd = 1] = start.split("-").map(Number);
+  const [, em = 1, ed = 1] = end.split("-").map(Number);
+  return sm === em ? `${MONTHS[sm - 1]} ${sd}–${ed}` : `${MONTHS[sm - 1]} ${sd} – ${MONTHS[em - 1]} ${ed}`;
+};
+
 /** Server-rendered weekly calendar page over ranked catalysts. Pure; all text is HTML-escaped. */
 export function renderCalendarPage(opts: { cats: Catalyst[]; asOf: string; all: boolean; week?: string; hide?: string }): string {
   // All-or-nothing: any invalid token drops the whole hide param, so bad input renders as no-hide.
@@ -66,17 +79,18 @@ export function renderCalendarPage(opts: { cats: Catalyst[]; asOf: string; all: 
       const startDate = cluster.start;
       const endDate = cluster.end;
       
-      // Build events list
-      const events = d.items
-        .filter(i => i.catalyst.dateStart >= startDate && i.catalyst.dateStart <= endDate)
+      // Build events list, showing each event's date certainty (exact / window / estimated)
+      const clusterEvents = d.items.filter(i => i.catalyst.dateStart >= startDate && i.catalyst.dateStart <= endDate);
+      const events = clusterEvents
         .map(i => {
           const eventDate = i.catalyst.dateStart;
           const eventKind = i.catalyst.kind;
           const eventTitle = esc(i.catalyst.title);
           const eventSource = i.catalyst.sourceUrl ? `<a href="${safeHref(i.catalyst.sourceUrl)!}" target="_blank" rel="noopener">source</a>` : "";
-          return `<li>${eventDate} ${eventKind} ${eventTitle} ${eventSource}</li>`;
+          return `<li>${eventDate} (${esc(i.catalyst.datePrecision)}) ${eventKind} ${eventTitle} ${eventSource}</li>`;
         })
         .join("");
+      const names = [...new Set(clusterEvents.map(i => shortName(i.catalyst)))].join(" + ");
       
       const k = kinds.length;
       const days = Math.round((Date.parse(`${cluster.start}T00:00:00Z`) - Date.parse(`${opts.asOf}T00:00:00Z`)) / 86_400_000);
@@ -85,7 +99,7 @@ export function renderCalendarPage(opts: { cats: Catalyst[]; asOf: string; all: 
       const affectedTickers = esc(d.items.flatMap(i => i.catalyst.affectedTickers).filter((v, i, a) => a.indexOf(v) === i).join(", "));
       const themes = esc(d.items.flatMap(i => i.catalyst.themes).filter((v, i, a) => a.indexOf(v) === i).join(", "));
       
-      return `<details class="cluster"><summary>${esc(d.ticker)}, ${d.score.toFixed(1)}, ${esc(kinds.join(", "))}, ${esc(startDate)} to ${esc(endDate)}</summary>
+      return `<details class="cluster"><summary>${esc(names)} · ${d.score.toFixed(1)} · ${esc(dateSpan(startDate, endDate))}</summary>
         <ul>${events}</ul>
         <p>Why material: ${whyMaterial}</p>
         <p>Likely affected: ${affectedTickers || "none"}; Themes: ${themes || "none"}</p>
@@ -110,6 +124,10 @@ export function renderCalendarPage(opts: { cats: Catalyst[]; asOf: string; all: 
     const [, m = 1, d = 1] = date.split("-").map(Number);
     return `<div class="day${date === opts.asOf ? " today" : ""}"><h3>${MONTHS[m - 1]} ${d}</h3>${shown.join("")}</div>`;
   };
+  // Pure: max updatedAt among the rendered catalysts, truncated to the minute.
+  const refreshed = opts.cats.length
+    ? opts.cats.reduce((m, c) => (c.updatedAt > m ? c.updatedAt : m), opts.cats[0]!.updatedAt).slice(0, 16)
+    : "never";
   const [wy = 0, wm = 0, wd = 0] = week.split("-").map(Number);
   const hasWeek = !!(opts.week && isDate(opts.week));
   const keep = { all: opts.all, hide: [...hidden] };
@@ -119,7 +137,7 @@ export function renderCalendarPage(opts: { cats: Catalyst[]; asOf: string; all: 
     .map((g) => {
       const on = !hidden.has(g);
       const hideNext = on ? [...hidden, g] : [...hidden].filter((x) => x !== g);
-      return `<a class="pill ${on ? "pill-on" : "pill-off"}" aria-pressed="${on}" href="${href({ week: hasWeek ? week : undefined, ...keep, hide: hideNext })}">${g.charAt(0).toUpperCase()}${g.slice(1)}</a>`;
+      return `<a class="pill ${on ? "pill-on" : "pill-off"}" aria-pressed="${on}" href="${href({ week: hasWeek ? week : undefined, ...keep, hide: hideNext })}">${on ? "✓ " : ""}${g.charAt(0).toUpperCase()}${g.slice(1)}</a>`;
     })
     .join(" ");
   const toggle = opts.all
@@ -142,7 +160,7 @@ h1{font-size:1.1rem;margin:0}
 .until{font-size:.72rem;color:#999}
 .pill{display:inline-block;padding:.25rem .7rem;border-radius:999px;border:1px solid #2a2a2a;text-decoration:none;min-height:1.7rem}
 .pill-on{background:#8ab4f8;color:#111;border-color:#8ab4f8}
-.pill-off{background:transparent;color:#8ab4f8}
+.pill-off{background:transparent;color:#8ab4f8;text-decoration:line-through}
 .cluster{margin:1rem 0;border:1px solid #333;padding:.5rem;border-radius:.3rem}
 .cluster summary{cursor:pointer;font-weight:bold}
 .cluster ul{margin:0;padding-left:1rem}
@@ -155,7 +173,7 @@ h1{font-size:1.1rem;margin:0}
   .pill,.cluster summary{min-height:40px;display:flex;align-items:center}
 }
 </style></head><body>
-<header><h1>Catalyst calendar — Week of ${MONTHS[wm - 1] ?? ''} ${wd ?? ''}, ${wy ?? ''}</h1> <a href="${href({ week: prev, ...keep })}">‹ Prev</a> <a href="${href(keep)}">Today</a> <a href="${href({ week: next, ...keep })}">Next ›</a> ${toggle} <nav class="pills">${pills}</nav></header>
+<header><h1>Catalyst calendar — Week of ${MONTHS[wm - 1] ?? ''} ${wd ?? ''}, ${wy ?? ''}</h1><span>Last refreshed: ${refreshed === "never" ? "never" : `${refreshed} UTC`}</span> <a href="${href({ week: prev, ...keep })}">‹ Prev</a> <a href="${href(keep)}">Today</a> <a href="${href({ week: next, ...keep })}">Next ›</a> ${toggle} <nav class="pills">${pills}</nav></header>
 <h2>Material clusters</h2>
 ${materialClusters || '<p>No material clusters found.</p>'}
 <div class="weekwrap"><div class="week">${days.map(dayCell).join("")}</div></div>

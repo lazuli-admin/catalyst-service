@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import { catalystDensity } from "./catalysts/density.js";
 import { rankCatalysts } from "./catalysts/ranked.js";
@@ -156,13 +156,16 @@ export function buildServer(store: Store, deps: PipelineDeps): FastifyInstance {
     include_leads: z.string().optional(),
     all: z.string().optional(),
   });
-  app.get("/catalysts", async (req) => {
+  const listCatalysts = async (req: FastifyRequest) => {
     const q = CatalystQuery.parse(req.query);
     const today = new Date().toISOString().slice(0, 10);
     const to = q.to ?? new Date(Date.parse(today) + 90 * 86_400_000).toISOString().slice(0, 10);
     const cats = await store.listCatalysts({ from: q.from ?? today, to, ticker: q.ticker, theme: q.theme, includeLeads: q.include_leads === "1" });
     return rankCatalysts(cats, { asOf: today, all: q.all === "1" });
-  });
+  };
+  app.get("/catalysts", listCatalysts);
+  // Public mirror of /catalysts: GET routes bypass the API-key hook above.
+  app.get("/api/events", listCatalysts);
   app.get("/catalysts/density", async (req) => {
     const { days, include_leads } = z.object({ days: z.coerce.number().int().min(1).max(365).default(90), include_leads: z.string().optional() }).parse(req.query);
     const today = new Date().toISOString().slice(0, 10);
