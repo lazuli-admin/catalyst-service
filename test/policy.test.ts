@@ -60,6 +60,16 @@ describe("syncPolicyEvents", () => {
     expect(row.dateStart).toBe("2026-11-10");
   });
 
+  it("pins the government funding lapse date and title", async () => {
+    const s = store();
+    await syncPolicyEvents(s, { today: "2026-11-01", horizonDays: 200, file: "data/policy-events.json" });
+    const rows = s.upsertCatalyst.mock.calls.map(([c]) => c as Catalyst);
+    const row = rows.find((r) => r.dedupeKey === "policy:us-gov-funding-lapse-2026-12-12");
+    expect(row).toBeDefined();
+    expect(row!.dateStart).toBe("2026-12-12");
+    expect(rows.some((r) => r.dateStart === "2026-12-11" && /funding/i.test(r.title))).toBe(false);
+  });
+
   it("persists precision/impact from the file", async () => {
     const s = store();
     await syncPolicyEvents(s, { today: "2026-11-01", horizonDays: 200, file: "data/policy-events.json" });

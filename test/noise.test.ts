@@ -201,7 +201,22 @@ describe("other noise patterns", () => {
   it("drops '; Correction' suffix and 'Correction' prefix, keeps mid-title corrections", () => {
     expect(isNoise({ title: "Antidumping Duty Order on Certain Steel Nails From Taiwan; Correction" })).toBe(true);
     expect(isNoise({ title: "Correction: Ocean Shipping Reform Act Registration" })).toBe(true);
-    const keep = "Technical Corrections and Conforming Amendments to Export Rules";
+    const keep = "Corrective Action Plans for Export Compliance Programs";
+    expect(isNoise({ title: keep })).toBe(false);
+  });
+
+  it("drops 'Technical Correction(s)' anywhere in the title", () => {
+    expect(isNoise({ title: "Technical Corrections and Conforming Amendments to Export Rules" })).toBe(true);
+    expect(isNoise({ title: "Export Administration Regulations; Technical Correction" })).toBe(true);
+    expect(isNoise({ title: "Amendments to Swap Rules: Technical Corrections" })).toBe(true);
+    const keep = "Technical Standards for Swap Execution Facilities";
+    expect(isNoise({ title: keep })).toBe(false);
+  });
+
+  it("drops marine-mammal incidental take authorizations, keeps other marine notices", () => {
+    expect(isNoise({ title: "Taking Marine Mammals Incidental to Cable Landing Construction" })).toBe(true);
+    expect(isNoise({ title: "Incidental Take Authorization for Subsea Cable Survey" })).toBe(true);
+    const keep = "Marine Terminal Operator Registration";
     expect(isNoise({ title: keep })).toBe(false);
   });
 
@@ -254,7 +269,7 @@ describe("other noise patterns", () => {
 
 describe("noise pattern coverage", () => {
   it("covers every NOISE_PATTERNS entry (add a test when adding a pattern)", () => {
-    expect(NOISE_PATTERNS.length).toBe(14);
+    expect(NOISE_PATTERNS.length).toBe(16);
   });
 
   it("AD_CVD_RE is the first noise pattern (Section 232 override depends on identity)", () => {

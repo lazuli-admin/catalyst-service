@@ -7,3 +7,5 @@ dist
 .replay-cache-events.json
 catalyst-backfill.db*
 deploy/.env
+__pycache__/
+*.pyc

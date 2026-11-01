@@ -156,7 +156,7 @@ export const TOPICS: Topic[] = [
   {
     id: "trade-remedy",
     label: "Trade remedies (AD/CVD)",
-    patterns: [/(negative|affirmative) (preliminary |final )?(countervailing (duty )?)?determination|affirmative (preliminary |final )?countervailing|initiation of (less[- ]than[- ]fair[- ]value|countervailing duty|antidumping duty) investigations?|sales at less than fair value|not being, or not likely to be, sold at less than fair value|antidumping duty order|countervailing duty order|antidumping and countervailing duty orders/i],
+    patterns: [/(negative|affirmative) (preliminary |final )?(countervailing (duty )?)?determination|affirmative (preliminary |final )?countervailing|initiation of (less[- ]than[- ]fair[- ]value|countervailing duty|antidumping duty) investigations?|sales at (not )?less[- ]than[- ]fair[- ]value|not being, or not likely to be, sold at less than fair value|antidumping duty order|countervailing duty order|antidumping and countervailing duty orders/i],
     themes: ["trade remedies"],
     // tickers are hand-curated, illustrative (rebar/steel, solar, trailers)
     affectedTickers: ["NUE", "STLD", "CMC", "FSLR", "WNC"],
@@ -164,7 +164,10 @@ export const TOPICS: Topic[] = [
   {
     id: "swaps-margining",
     label: "Swaps & margining",
-    patterns: [/(?<!debt[- ]for[- ]nature )\bswaps?\b|security-based swap|portfolio margin|cross-margin|clearing requirement determinations?|clearing agenc/i],
+    patterns: [
+      // bare "swap(s)" with general negative lookarounds to drop swap data repositories, currency/liquidity swaps, swap lines, and fund-affiliate swaps
+      /(?<!debt[- ]for[- ]nature |currency[- ]|liquidity[- ])\bswaps?\b(?!\s*(?:data repositor|lines?|with affiliated))|security-based swap|portfolio margin|cross-margin|clearing requirement determinations?|clearing agenc/i,
+    ],
     themes: ["derivatives markets"],
     // tickers are hand-curated, illustrative
     affectedTickers: ["CME", "ICE", "CBOE", "GS", "MS"],
@@ -172,7 +175,11 @@ export const TOPICS: Topic[] = [
   {
     id: "submarine-cables",
     label: "Submarine cables & network security",
-    patterns: [/(submarine|undersea|subsea) cables?|cable landing/i],
+    patterns: [
+      /(submarine|undersea|subsea)\W+(\w+\W+){0,3}cables?/i,
+      // "cable landing" only when it is a regulatory/telecom action (e.g. license issuance or related rules)
+      /cable landing (licen[cs]e|rules|act|applications?|stations?)|licen[cs]e[^.]{0,40}cable landing/i,
+    ],
     themes: ["submarine cables"],
     // tickers are hand-curated, illustrative
     affectedTickers: ["GLW", "CIEN", "META", "GOOGL"],
@@ -232,6 +239,10 @@ export const NOISE_PATTERNS: RegExp[] = [
   /performance review board/i,
   // drops routine FTA textile short-supply / commercial-availability procedural notices (e.g. CAFTA-DR)
   /short[- ]supply|commercial availability/i,
+  // marine-mammal incidental take authorizations (e.g. for cable landing construction)
+  /incidental take|marine mammals?/i,
+  // routine technical correction titles are non-substantive amendments
+  /technical corrections?\b/i,
 ];
 
 export interface FrDoc {
