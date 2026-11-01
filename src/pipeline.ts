@@ -10,7 +10,7 @@ import {
   type AlertPolicy,
 } from "./alerts.js";
 import type { NtfyConfig } from "./config.js";
-import { nyDate, type Clock } from "./clock.js";
+import { marketToday, systemClock, type Clock } from "./clock.js";
 import { acceptCatalyst, sourceTier } from "./catalysts/credibility.js";
 import { catalystDedupeKey, type ExtractedCatalyst } from "./catalysts/extract.js";
 import type { PillarEvidence, Store } from "./db.js";
@@ -59,8 +59,6 @@ export interface PipelineDeps {
   slackWebhookUrl?: string;
   fetch?: typeof fetch;
   log?: (msg: string) => void;
-  /** Clock override, so a replay judges history as of when each item was seen. */
-  now?: () => Date;
   /** Future-event extraction; with an LLM configured, eligible items get their catalysts mined. */
   catalysts?: { extract(item: { title: string; summary?: string; url?: string | null; publishedAt?: string | null }): Promise<ExtractedCatalyst[]> };
 }
@@ -77,7 +75,7 @@ async function mineCatalysts(deps: PipelineDeps, observation: Observation, judgm
   if (!FUTURE_SIGNAL_RE.test(text)) return;
   const tier = sourceTier({ url: observation.url, title: observation.title });
   if (tier === 3) return; // unverified source: skip the LLM call entirely
-  const today = nyDate((deps.now ?? (() => new Date()))());
+  const today = marketToday(deps.clock ?? systemClock);
   try {
     const extracted = await catalysts.extract({ title: observation.title, summary: observation.summary, url: observation.url, publishedAt: observation.publishedAt });
     for (const c of extracted) {
@@ -119,7 +117,7 @@ export async function processItems(
     entities: await store.listEntities(),
     trades: await store.listTrades(),
   };
-  const nowMs = (deps.now?.() ?? new Date()).getTime();
+  const nowMs = (deps.clock ?? systemClock).now().getTime();
   const at = new Date(nowMs).toISOString();
   const since = new Date(nowMs - policy.accumulationWindowHours * 3600_000).toISOString();
   const titleSince =

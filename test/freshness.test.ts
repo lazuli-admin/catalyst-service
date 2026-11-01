@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { lookup } from "node:dns";
 import { EventIndex } from "../src/events.js";
 import { createLlmFreshness, createPublisherReader, datesVerdict, extractPublisherEvidence, freshnessHold, isPublicAddress, publisherFeedEvidence, type FreshnessDecision, type FreshnessEvidence } from "../src/freshness.js";
+import { fixedClock } from "../src/clock.js";
 import { processItems } from "../src/pipeline.js";
 import type { JudgmentDraft } from "../src/scoring/types.js";
 import { deps, memoryStore } from "./helpers.js";
@@ -350,7 +351,7 @@ async function setup(page: FreshnessEvidence, material = true) {
   const read = vi.fn(async () => page);
   const delivery = vi.fn<typeof fetch>(async () => new Response("ok"));
   const events = new EventIndex({ name: "test", embed: async () => new Float32Array([1, 0]) });
-  const d = deps(store, { scorer: { name: "llm:test", judge }, freshness: { read, judge: async () => review(true) }, now: () => new Date(NOW), events,
+  const d = deps(store, { scorer: { name: "llm:test", judge }, freshness: { read, judge: async () => review(true) }, clock: fixedClock(NOW), events,
     policy: { alertThreshold: 0.6, weakSignalFloor: 0.2, accumulationThreshold: 1, accumulationWindowHours: 72, maxAlertAgeHours: 48 },
     barkUrl: "https://bark.example/test", barkRequiresMaterial: true, fetch: delivery as typeof fetch });
   const item = { externalId: "clarity", title: "Senators reach stablecoin yield deal to advance CLARITY Act", url: "https://news.google.com/rss/articles/x", publishedAt: NOW };

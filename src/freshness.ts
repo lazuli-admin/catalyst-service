@@ -4,6 +4,7 @@ import { request } from "node:https";
 import { BlockList, isIP } from "node:net";
 import type { Config } from "./config.js";
 import type { EventCandidate } from "./events.js";
+import { nyDate } from "./clock.js";
 import type { HeldReason, Observation, Source } from "./types.js";
 import { errorMessage } from "./util.js";
 
@@ -347,15 +348,19 @@ export function createLlmFreshness(llm: NonNullable<Config["llm"]>, fetchImpl: t
           if (originUrl && allowedLookups.includes(originUrl)) lookupUrl = originUrl;
         } else {
           const quotes = sources.filter((s) => s.url === originUrl);
-          const day = new Date(disclosed).toISOString().slice(0, 10);
+          // A date-only first_public_at already names the ET calendar day; only a timestamp is converted (midnight UTC would shift back a day).
+          const day = /^\d{4}-\d{2}-\d{2}$/.test(firstPublicAt ?? "") ? firstPublicAt! : nyDate(new Date(disclosed));
           const publications = origin.dates.filter((d) => d.kind === "published" && Number.isFinite(Date.parse(d.value)));
           const published = publications.map((d) => Date.parse(d.value));
-          const dateSpellings = [day, new Date(disclosed).toLocaleDateString("en-US", { timeZone: "UTC", month: "long", day: "numeric", year: "numeric" })];
+          // A date-only published value already names the ET calendar day; only a timestamp is converted (midnight UTC would shift back a day).
+          const etDay = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : nyDate(new Date(Date.parse(value)));
+          // Noon UTC is mid-morning ET, so the long form is that same ET calendar day.
+          const dateSpellings = [day, new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", { timeZone: "America/New_York", month: "long", day: "numeric", year: "numeric" })];
           const grounded = disclosureQuote && disclosureQuote.length >= 12 && containsQuote(origin.text, disclosureQuote);
           if (!quotes.length || !disclosureBasis || !grounded) fresh = null;
           else if (disclosureBasis === "explicit_disclosure_date") {
             if (!dateSpellings.some((date) => disclosureQuote.includes(date))) fresh = null;
-          } else if (!published.length || !published.every((t) => new Date(t).toISOString().startsWith(day))) fresh = null;
+          } else if (!published.length || !publications.every((d) => etDay(d.value) === day)) fresh = null;
           else {
             disclosed = Math.min(...published);
             const earliest = publications.find((d) => Date.parse(d.value) === disclosed)!;

@@ -6,7 +6,7 @@ import type { Catalyst } from "../types.js";
 import { errorMessage } from "../util.js";
 
 function horizonEnd(today: string, horizonDays: number): string {
-  return new Date(Date.parse(`${today}T00:00:00Z`) + horizonDays * 86_400_000).toISOString().slice(0, 10);
+  return new Date(Date.parse(`${today}T00:00:00Z`) + horizonDays * 86_400_000).toISOString().slice(0, 10); // clock-guard: pure-date
 }
 
 interface PolicyEvent {

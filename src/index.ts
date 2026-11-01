@@ -37,6 +37,7 @@ async function seed(store: Store): Promise<void> {
 
 export function createDeps(config: Config, store: Store): PipelineDeps {
   return {
+    clock: systemClock,
     store,
     scorer: config.llm ? createLlmScorer(config.llm) : heuristicScorer,
     triage: config.llm ? createLlmTriage(config.llm) : undefined,
@@ -44,7 +45,7 @@ export function createDeps(config: Config, store: Store): PipelineDeps {
     events: config.eventGrouping ? new EventIndex(createLocalEmbedder()) : undefined,
     sourceContext: { fetch, userAgent: config.userAgent },
     freshness: { read: createPublisherReader(config.userAgent), judge: config.llm ? createLlmFreshness(config.llm) : undefined },
-    catalysts: config.llm ? createCatalystExtractor(config.llm) : undefined,
+    catalysts: config.llm ? createCatalystExtractor(config.llm, { clock: systemClock }) : undefined,
     webhookUrl: config.alertWebhookUrl,
     ntfy: config.ntfy,
     barkUrl: config.barkUrl,
@@ -80,7 +81,7 @@ async function main(): Promise<void> {
   }
   const prospect = () =>
     deps.catalysts && deps.store
-      ? runProspect({ store, extractor: deps.catalysts, userAgent: config.userAgent, log: deps.log }, { watchlist, themes: [...DEFAULT_THEMES], maxItems: 60, perQuery: 5 })
+      ? runProspect({ store, extractor: deps.catalysts, clock: deps.clock ?? systemClock, userAgent: config.userAgent, log: deps.log }, { watchlist, themes: [...DEFAULT_THEMES], maxItems: 60, perQuery: 5 })
       : Promise.resolve({ queries: 0, items: 0, stored: 0 });
   let lastProspectAt = 0;
   const PROSPECT_INTERVAL_MS = 6 * 3600_000;

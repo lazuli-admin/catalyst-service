@@ -140,7 +140,7 @@ export function inSession(at: string, prevDate: string, date: string): boolean {
   return afterPrev && beforeClose;
 }
 
-const nextDate = (date: string): string => new Date(Date.parse(`${date}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+const nextDate = (date: string): string => new Date(Date.parse(`${date}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10); // clock-guard: pure-date
 
 /** Big-move days per trade in [from, to], whether a push on that trade preceded each, and how each push lined up. */
 export function checkMarket(trades: Trade[], prices: Prices, pushes: Push[], from: Date, to: Date): MarketCheck {
