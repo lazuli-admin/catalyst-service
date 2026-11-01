@@ -237,9 +237,12 @@ export const NOISE_PATTERNS: RegExp[] = [
   /privacy act of 1974/i,
   /advisory committee/i,
   /performance review board/i,
-  // drops routine FTA textile short-supply / commercial-availability procedural notices (e.g. CAFTA-DR);
-  // also drops marine mammal incidental take permitting (e.g. cable landing construction incidental to marine mammals)
-  /short[- ]supply|commercial availability|incidental take|marine mammals?/i,
+  // drops routine FTA textile short-supply / commercial-availability procedural notices (e.g. CAFTA-DR)
+  /short[- ]supply|commercial availability/i,
+  // marine-mammal incidental take authorizations (e.g. for cable landing construction)
+  /incidental take|marine mammals?/i,
+  // routine technical correction titles are non-substantive amendments
+  /technical corrections?\b/i,
 ];
 
 export interface FrDoc {
