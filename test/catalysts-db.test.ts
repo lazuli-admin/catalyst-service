@@ -1,3 +1,5 @@
+import { createClient } from "@libsql/client";
+import { Store } from "../src/db.js";
 import { describe, expect, it } from "vitest";
 import { catalystDensity } from "../src/catalysts/density.js";
 import { memoryStore } from "./helpers.js";
@@ -110,6 +112,48 @@ describe("catalysts db", () => {
     // Real cutoff: deletes the fresh-in-window rule row, keeps the old-dated one and the other kind.
     expect(await store.purgeStaleCatalysts("rule_effective", "2026-11-01", "2999-01-01T00:00:00.000Z", "fr:")).toBe(1);
     expect(await store.listCatalysts({ from: "2025-01-01", to: "2027-12-31" })).toHaveLength(2);
+  });
+
+  it("persists dateSource, defaulting to null", async () => {
+    const store = await memoryStore();
+    const withSource = await store.upsertCatalyst({ ...base, dateSource: "text" });
+    expect(withSource.dateSource).toBe("text");
+    const listed = await store.listCatalysts({ from: "2025-01-01", to: "2025-12-31" });
+    expect(listed).toHaveLength(1);
+    expect(listed[0]!.dateSource).toBe("text");
+
+    await store.upsertCatalyst({ ...base, dedupeKey: "no-source" });
+    const again = await store.listCatalysts({ from: "2025-01-01", to: "2025-12-31", includeLeads: true });
+    expect(again.find((c) => c.dedupeKey === "no-source")!.dateSource).toBeNull();
+  });
+
+  it("migrate() adds date_source to a catalysts table created without it", async () => {
+    const client = createClient({ url: ":memory:" });
+    await client.execute(
+      `CREATE TABLE catalysts (
+        id TEXT PRIMARY KEY,
+        ticker TEXT,
+        title TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        status TEXT NOT NULL,
+        date_start TEXT NOT NULL,
+        date_end TEXT NOT NULL,
+        date_precision TEXT,
+        confidence REAL NOT NULL,
+        themes TEXT NOT NULL DEFAULT '[]',
+        affected_tickers TEXT NOT NULL DEFAULT '[]',
+        source_tier INTEGER NOT NULL DEFAULT 3,
+        source_url TEXT,
+        observation_id TEXT,
+        dedupe_key TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+    );
+    const store = new Store(client);
+    await store.migrate();
+    const cols = await client.execute("PRAGMA table_info(catalysts)");
+    expect(cols.rows.some((r) => r.name === "date_source")).toBe(true);
   });
 
   it("purgeStaleCatalysts spares rule rows whose dedupe key lacks the given prefix", async () => {

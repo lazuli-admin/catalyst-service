@@ -148,7 +148,6 @@ export async function syncFederalRegister(
           }
           const tags = topicTags(doc);
           for (const ev of events) {
-            // dateSource is not persisted: the catalysts table has no column for it.
             await store.upsertCatalyst({
               ticker: null,
               title: ev.title,
@@ -157,6 +156,7 @@ export async function syncFederalRegister(
               dateStart: ev.date,
               dateEnd: ev.date,
               datePrecision: ev.datePrecision,
+              dateSource: ev.dateSource,
               confidence: 0.9,
               themes: tags.themes,
               affectedTickers: tags.affectedTickers,

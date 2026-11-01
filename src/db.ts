@@ -7,6 +7,7 @@ import type {
   CatalystInput,
   CatalystStatus,
   DatePrecision,
+  DateSource,
   Effect,
   Entity,
   EntityKind,
@@ -159,6 +160,7 @@ const MIGRATIONS = [
     date_start TEXT NOT NULL,
     date_end TEXT NOT NULL,
     date_precision TEXT,
+    date_source TEXT,
     confidence REAL NOT NULL,
     -- legacy, unused: kept to avoid a migration; no code reads or writes it
     impact_weight REAL,
@@ -192,6 +194,7 @@ const toCatalyst = (row: Row): Catalyst => ({
   dateStart: s(row.date_start),
   dateEnd: s(row.date_end),
   datePrecision: row.date_precision ? (s(row.date_precision) as DatePrecision) : row.date_start === row.date_end ? "exact" : "window",
+  dateSource: row.date_source ? (s(row.date_source) as DateSource) : null,
   confidence: Number(row.confidence),
   themes: parse(row.themes, [] as string[]),
   affectedTickers: parse(row.affected_tickers, [] as string[]),
@@ -401,6 +404,9 @@ export class Store {
     const catalystCols = await this.all("PRAGMA table_info(catalysts)");
     if (!catalystCols.some((c) => c.name === "date_precision")) {
       await this.client.execute("ALTER TABLE catalysts ADD COLUMN date_precision TEXT");
+    }
+    if (!catalystCols.some((c) => c.name === "date_source")) {
+      await this.client.execute("ALTER TABLE catalysts ADD COLUMN date_source TEXT");
     }
     if (!catalystCols.some((c) => c.name === "impact_weight")) {
       // legacy, unused: kept to avoid a migration; no code reads or writes it
@@ -957,8 +963,8 @@ export class Store {
     const datePrecision = c.datePrecision ?? (c.dateStart === c.dateEnd ? "exact" : "window");
     const rows = await this.all(
       `INSERT INTO catalysts
-       (id, ticker, title, kind, status, date_start, date_end, date_precision, confidence, themes, affected_tickers, source_tier, source_url, observation_id, dedupe_key, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, ticker, title, kind, status, date_start, date_end, date_precision, date_source, confidence, themes, affected_tickers, source_tier, source_url, observation_id, dedupe_key, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(dedupe_key) DO UPDATE SET
          title = CASE WHEN excluded.source_tier <= catalysts.source_tier THEN excluded.title ELSE catalysts.title END,
          kind = CASE WHEN excluded.source_tier <= catalysts.source_tier THEN excluded.kind ELSE catalysts.kind END,
@@ -966,6 +972,7 @@ export class Store {
          date_start = excluded.date_start,
          date_end = excluded.date_end,
          date_precision = excluded.date_precision,
+         date_source = excluded.date_source,
          confidence = excluded.confidence,
          themes = excluded.themes,
          affected_tickers = excluded.affected_tickers,
@@ -973,7 +980,7 @@ export class Store {
          source_url = CASE WHEN excluded.source_tier <= catalysts.source_tier THEN excluded.source_url ELSE catalysts.source_url END,
          updated_at = excluded.updated_at
        RETURNING *`,
-      [newId(), c.ticker, c.title, c.kind, c.status, c.dateStart, c.dateEnd, datePrecision, c.confidence, json(c.themes), json(c.affectedTickers), c.sourceTier, c.sourceUrl, c.observationId, c.dedupeKey, updatedAt, updatedAt],
+      [newId(), c.ticker, c.title, c.kind, c.status, c.dateStart, c.dateEnd, datePrecision, c.dateSource ?? null, c.confidence, json(c.themes), json(c.affectedTickers), c.sourceTier, c.sourceUrl, c.observationId, c.dedupeKey, updatedAt, updatedAt],
     );
     if (!rows[0]) throw new Error("upsertCatalyst returned no row");
     return toCatalyst(rows[0]);

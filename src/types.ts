@@ -98,6 +98,9 @@ export type CatalystStatus = "lead" | "scheduled" | "confirmed" | "done" | "canc
 /** How precisely the date is known: an exact day, a window, or a model estimate. */
 export type DatePrecision = "exact" | "window" | "estimated";
 
+/** Where a catalyst's date came from: the source API, or parsed from text. */
+export type DateSource = "api" | "text";
+
 export interface Catalyst {
   id: string;
   ticker: string | null;
@@ -109,6 +112,7 @@ export interface Catalyst {
   /** YYYY-MM-DD, latest expected; equal to dateStart when exact. */
   dateEnd: string;
   datePrecision: DatePrecision;
+  dateSource?: DateSource | null;
   /** 0..1 */
   confidence: number;
   themes: string[];
@@ -123,8 +127,9 @@ export interface Catalyst {
 }
 
 /** What callers pass when upserting a catalyst: datePrecision is derived/defaulted by the store. */
-export type CatalystInput = Omit<Catalyst, "id" | "createdAt" | "updatedAt" | "datePrecision"> & {
+export type CatalystInput = Omit<Catalyst, "id" | "createdAt" | "updatedAt" | "datePrecision" | "dateSource"> & {
   datePrecision?: DatePrecision;
+  dateSource?: DateSource | null;
 };
 
 export interface Watchlist {

@@ -103,6 +103,8 @@ describe("syncFederalRegister", () => {
     expect(abstractRow.datePrecision).toBe("estimated");
     const apiRow = rows.find((r) => r.dateStart === "2026-11-07");
     expect(apiRow?.datePrecision).toBe("exact");
+    expect(apiRow?.dateSource).toBe("api");
+    expect(abstractRow.dateSource).toBe("text");
   });
 
   it("FCC: only spectrum/broadband/satellite/net-neutrality/merger rules are kept", async () => {
