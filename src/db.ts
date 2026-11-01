@@ -939,6 +939,7 @@ export class Store {
        (id, ticker, title, kind, status, date_start, date_end, date_precision, confidence, themes, affected_tickers, source_tier, source_url, impact_weight, observation_id, dedupe_key, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(dedupe_key) DO UPDATE SET
+         title = CASE WHEN excluded.source_tier <= catalysts.source_tier THEN excluded.title ELSE catalysts.title END,
          status = excluded.status,
          date_start = excluded.date_start,
          date_end = excluded.date_end,

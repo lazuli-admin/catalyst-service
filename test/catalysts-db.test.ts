@@ -37,6 +37,18 @@ describe("catalysts db", () => {
     expect(list[0]!.id).toBe(a.id);
   });
 
+  it("upsert updates title at equal tier, keeps old title at worse tier", async () => {
+    const store = await memoryStore();
+    const a = await store.upsertCatalyst({ ...base, title: "FOMC meeting" });
+    const b = await store.upsertCatalyst({ ...base, title: "FOMC renamed" });
+    expect(b.id).toBe(a.id);
+    expect(b.title).toBe("FOMC renamed");
+
+    const c = await store.upsertCatalyst({ ...base, title: "FOMC worse tier", sourceTier: 2 });
+    expect(c.id).toBe(a.id);
+    expect(c.title).toBe("FOMC renamed");
+  });
+
   it("filters by window, ticker and theme", async () => {
     const store = await memoryStore();
     await store.upsertCatalyst(base);
