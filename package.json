@@ -11,7 +11,8 @@
     "test": "vitest run",
     "eval": "tsx scripts/eval.ts",
     "digest": "tsx scripts/digest.ts",
-    "replay": "tsx scripts/replay.ts"
+    "replay": "tsx scripts/replay.ts",
+    "recall": "tsx scripts/recall.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",

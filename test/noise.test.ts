@@ -1,0 +1,255 @@
+import { describe, expect, it } from "vitest";
+import { isNoise, isRelevant, AD_CVD_RE, NOISE_PATTERNS } from "../src/topics.js";
+
+// Keep examples are near-misses: removing or loosening the single pattern under
+// test must flip its drop example to isNoise === false (keep examples never match
+// any other noise pattern, verified against src/topics.ts).
+
+describe("AD/CVD paperwork noise", () => {
+  it("drops administrative review (initiation / results), keeps determinations", () => {
+    expect(isNoise({ title: "Certain Steel Nails From Taiwan: Final Results of Antidumping Duty Administrative Review; 2023-2024" })).toBe(true);
+    expect(isNoise({ title: "Certain Steel Nails From Taiwan: Initiation of Antidumping Duty Administrative Review" })).toBe(true);
+    const keep = "Certain Steel Nails From Taiwan: Final Affirmative Determination of Sales at Less Than Fair Value";
+    expect(isNoise({ title: keep })).toBe(false);
+    expect(isRelevant({ title: keep })).toBe(true);
+  });
+
+  it("drops preliminary results, keeps preliminary determinations", () => {
+    expect(isNoise({ title: "Certain Steel Nails From Taiwan: Preliminary Results of the Antidumping Duty Administrative Review" })).toBe(true);
+    const keep = "Certain Steel Nails From Taiwan: Preliminary Determination of Sales at Less Than Fair Value";
+    expect(isNoise({ title: keep })).toBe(false);
+    expect(isRelevant({ title: keep })).toBe(true);
+  });
+
+  it("drops rescission of review, keeps antidumping duty orders", () => {
+    expect(isNoise({ title: "Pure Magnesium From Israel: Rescission of Antidumping Duty Administrative Review" })).toBe(true);
+    const keep = "Pure Magnesium From Israel: Antidumping Duty Order";
+    expect(isNoise({ title: keep })).toBe(false);
+    expect(isRelevant({ title: keep })).toBe(true);
+  });
+
+  it("drops scope rulings, keeps antidumping duty orders", () => {
+    expect(isNoise({ title: "Certain Corrosion-Resistant Steel Products From Japan: Scope Ruling on the Antidumping Duty Order" })).toBe(true);
+    const keep = "Certain Corrosion-Resistant Steel Products From Japan: Antidumping Duty Order";
+    expect(isNoise({ title: keep })).toBe(false);
+    expect(isRelevant({ title: keep })).toBe(true);
+  });
+
+  it("drops sunset reviews, keeps countervailing duty orders", () => {
+    expect(isNoise({ title: "Certain Cold-Rolled Steel From Japan: Sunset Review of the Antidumping Duty Order" })).toBe(true);
+    const keep = "Certain Cold-Rolled Steel From Japan: Countervailing Duty Order";
+    expect(isNoise({ title: keep })).toBe(false);
+    expect(isRelevant({ title: keep })).toBe(true);
+  });
+
+  it("drops new shipper reviews, keeps final determinations", () => {
+    expect(isNoise({ title: "Certain Pasta From Italy: New Shipper Review" })).toBe(true);
+    const keep = "Certain Pasta From Italy: Final Affirmative Determination of Sales at Less Than Fair Value";
+    expect(isNoise({ title: keep })).toBe(false);
+    expect(isRelevant({ title: keep })).toBe(true);
+  });
+
+  it("drops changed circumstances reviews, keeps preliminary affirmative countervailing determinations", () => {
+    expect(isNoise({ title: "Steel Concrete Reinforcing Bars From Turkey: Changed Circumstances Review" })).toBe(true);
+    const keep = "Steel Concrete Reinforcing Bars From Turkey: Preliminary Affirmative Countervailing Determination";
+    expect(isNoise({ title: keep })).toBe(false);
+    expect(isRelevant({ title: keep })).toBe(true);
+  });
+
+  it("drops opportunity to request administrative review, keeps antidumping duty orders", () => {
+    expect(isNoise({ title: "Certain Frozen Warmwater Shrimp From India: Opportunity to Request Administrative Review" })).toBe(true);
+    const keep = "Certain Frozen Warmwater Shrimp From India: Antidumping Duty Order";
+    expect(isNoise({ title: keep })).toBe(false);
+    expect(isRelevant({ title: keep })).toBe(true);
+  });
+
+  it("drops continuation of AD/CVD orders, keeps preliminary determinations", () => {
+    expect(isNoise({ title: "Carbon and Certain Alloy Steel Wire Rod From Japan: Continuation of Antidumping Duty Order" })).toBe(true);
+    const keep = "Carbon and Certain Alloy Steel Wire Rod From Japan: Preliminary Determination of Sales at Less Than Fair Value";
+    expect(isNoise({ title: keep })).toBe(false);
+    expect(isRelevant({ title: keep })).toBe(true);
+  });
+
+  it("drops covered merchandise referrals, keeps final determinations", () => {
+    expect(isNoise({ title: "Hot-Rolled Steel Flat Products From Japan: Covered Merchandise Referral of the European Commission" })).toBe(true);
+    const keep = "Hot-Rolled Steel Flat Products From Japan: Final Affirmative Determination of Sales at Less Than Fair Value";
+    expect(isNoise({ title: keep })).toBe(false);
+    expect(isRelevant({ title: keep })).toBe(true);
+  });
+
+  it("drops notices of court decision, keeps antidumping duty orders", () => {
+    expect(isNoise({ title: "Silicon Metal From China: Notice of Court Decision Not in Harmony" })).toBe(true);
+    const keep = "Silicon Metal From China: Antidumping Duty Order";
+    expect(isNoise({ title: keep })).toBe(false);
+    expect(isRelevant({ title: keep })).toBe(true);
+  });
+
+  it("drops circumvention inquiries, keeps antidumping and countervailing duty orders", () => {
+    expect(isNoise({ title: "Certain Glass Containers From China: Circumvention Inquiry on the Antidumping Duty Orders" })).toBe(true);
+    expect(isNoise({ title: "Certain Glass Containers From China: Anticircumvention Inquiry on the Countervailing Duty Order" })).toBe(true);
+    const keep = "Certain Glass Containers From China: Antidumping and Countervailing Duty Orders";
+    expect(isNoise({ title: keep })).toBe(false);
+    expect(isRelevant({ title: keep })).toBe(true);
+  });
+
+  it("drops postponement of preliminary determination, keeps preliminary affirmative determinations", () => {
+    expect(isNoise({ title: "Certain Polyester Staple Fiber From Korea: Postponement of Preliminary Determination of Sales at Less Than Fair Value" })).toBe(true);
+    const keep = "Certain Polyester Staple Fiber From Korea: Preliminary Affirmative Determination of Sales at Less Than Fair Value";
+    expect(isNoise({ title: keep })).toBe(false);
+    expect(isRelevant({ title: keep })).toBe(true);
+  });
+
+  it("drops extensions of time limit, keeps preliminary determinations", () => {
+    expect(isNoise({ title: "Certain Oil Country Tubular Goods From Turkey: Extension of Time Limit for Final Determination" })).toBe(true);
+    const keep = "Certain Oil Country Tubular Goods From Turkey: Preliminary Determination of Sales at Less Than Fair Value";
+    expect(isNoise({ title: keep })).toBe(false);
+    expect(isRelevant({ title: keep })).toBe(true);
+  });
+
+  it("drops revocations of order, keeps countervailing duty orders", () => {
+    expect(isNoise({ title: "Certain Carbon Steel Pipe From Korea: Revocation of the Antidumping Duty Order" })).toBe(true);
+    const keep = "Certain Carbon Steel Pipe From Korea: Countervailing Duty Order";
+    expect(isNoise({ title: keep })).toBe(false);
+    expect(isRelevant({ title: keep })).toBe(true);
+  });
+
+  it("drops results-of inquiry notices, keeps antidumping duty orders", () => {
+    expect(isNoise({ title: "Steel Wire Garment Hangers From Korea: Results of Antidumping Duty Inquiry" })).toBe(true);
+    const keep = "Steel Wire Garment Hangers From Korea: Antidumping Duty Order";
+    expect(isNoise({ title: keep })).toBe(false);
+    expect(isRelevant({ title: keep })).toBe(true);
+  });
+
+  it("drops rescissions of review, keeps countervailing duty orders", () => {
+    expect(isNoise({ title: "Brake Drums From China: Rescission of Countervailing Duty Review" })).toBe(true);
+    const keep = "Brake Drums From China: Countervailing Duty Order";
+    expect(isNoise({ title: keep })).toBe(false);
+    expect(isRelevant({ title: keep })).toBe(true);
+  });
+
+  it("drops anticircumvention rulings, keeps final affirmative countervailing determinations", () => {
+    expect(isNoise({ title: "Wire Hangers From Vietnam: Anticircumvention Ruling" })).toBe(true);
+    const keep = "Wire Hangers From Vietnam: Final Affirmative Countervailing Duty Determination";
+    expect(isNoise({ title: keep })).toBe(false);
+    expect(isRelevant({ title: keep })).toBe(true);
+  });
+
+  it("drops final results of redetermination, keeps final affirmative determinations", () => {
+    expect(isNoise({ title: "Honey From Brazil: Final Results of Redetermination Pursuant to Court Remand" })).toBe(true);
+    const keep = "Honey From Brazil: Final Affirmative Determination of Sales at Less Than Fair Value";
+    expect(isNoise({ title: keep })).toBe(false);
+    expect(isRelevant({ title: keep })).toBe(true);
+  });
+
+  it("drops preliminary results of redetermination, keeps preliminary affirmative countervailing determinations", () => {
+    expect(isNoise({ title: "Honey From Brazil: Preliminary Results of Redetermination" })).toBe(true);
+    const keep = "Honey From Brazil: Preliminary Affirmative Countervailing Duty Determination";
+    expect(isNoise({ title: keep })).toBe(false);
+    expect(isRelevant({ title: keep })).toBe(true);
+  });
+});
+
+describe("Section 232 override", () => {
+  it("lets Section 232 titles through AD/CVD noise but still drops corrections", () => {
+    const with232 = "Section 232 Steel Nails: Preliminary Results of Antidumping Duty Administrative Review";
+    expect(isNoise({ title: with232 })).toBe(false); // AD/CVD pattern overridden
+    expect(isNoise({ title: "Steel Nails: Preliminary Results of Antidumping Duty Administrative Review" })).toBe(true); // same title without "Section 232" is noise
+    expect(isNoise({ title: `${with232}; Correction` })).toBe(true); // only AD/CVD is overridden
+    const keep = "Section 232 Steel Nails: Preliminary Determination of Sales at Less Than Fair Value";
+    expect(isNoise({ title: keep })).toBe(false);
+  });
+});
+
+describe("other noise patterns", () => {
+  it("drops information collection / OMB / paperwork reduction, keeps other records notices", () => {
+    expect(isNoise({ title: "Agency Information Collection Activities; Comment Request" })).toBe(true);
+    expect(isNoise({ title: "Reports, Forms and Recordkeeping Requirements: Submission to OMB for Review and Approval" })).toBe(true);
+    expect(isNoise({ title: "Paperwork Reduction Act of 1995; Proposed Collection" })).toBe(true);
+    const keep = "Agency Records Management Activities: Submission of Proposed Data Collection Procedures";
+    expect(isNoise({ title: keep })).toBe(false);
+  });
+
+  it("drops Sunshine Act only when anchored at the start", () => {
+    expect(isNoise({ title: "Sunshine Act Meetings" })).toBe(true);
+    expect(isNoise({ title: "Notice under the Sunshine Act" })).toBe(false);
+  });
+
+  it("drops self-regulatory organization notices only when anchored at the start", () => {
+    expect(isNoise({ title: "Self-Regulatory Organizations; NYSE American, Inc.; Notice of Filing of a Proposed Rule Change" })).toBe(true);
+    expect(isNoise({ title: "Notice of a Proposed Rule Change by a Self-Regulatory Organization" })).toBe(false);
+  });
+
+  it("drops petitions for rulemaking / reconsideration, keeps other petitions", () => {
+    expect(isNoise({ title: "Petition for Rulemaking To Require Rear Impact Protection" })).toBe(true);
+    expect(isNoise({ title: "Petition for Reconsideration of the Guidance Document" })).toBe(true);
+    const keep = "Grant of a Petition for Exemption";
+    expect(isNoise({ title: keep })).toBe(false);
+  });
+
+  it("drops commercial gauger / laboratory notices, keeps certified status applications", () => {
+    expect(isNoise({ title: "Commercial Gauger and Laboratory Program: Request for Applications" })).toBe(true);
+    const keep = "Importer Inspection Program: Application for Certified Gauger and Laboratory Status";
+    expect(isNoise({ title: keep })).toBe(false);
+  });
+
+  it("drops lists of rules to be reviewed, keeps other regulatory planning notices", () => {
+    expect(isNoise({ title: "Regulatory Planning and Review: List of Rules To Be Reviewed" })).toBe(true);
+    const keep = "Regulatory Planning and Review: Unified Agenda of Rules";
+    expect(isNoise({ title: keep })).toBe(false);
+  });
+
+  it("drops '; Correction' suffix and 'Correction' prefix, keeps mid-title corrections", () => {
+    expect(isNoise({ title: "Antidumping Duty Order on Certain Steel Nails From Taiwan; Correction" })).toBe(true);
+    expect(isNoise({ title: "Correction: Ocean Shipping Reform Act Registration" })).toBe(true);
+    const keep = "Technical Corrections and Conforming Amendments to Export Rules";
+    expect(isNoise({ title: keep })).toBe(false);
+  });
+
+  it("drops C-prefixed correction documentNumbers, keeps plain ones", () => {
+    const title = "Ocean Shipping Reform Act: Registration of Carriers";
+    expect(isNoise({ title, documentNumber: "C1-2025-123" })).toBe(true);
+    expect(isNoise({ title, documentNumber: "C2-2025-456" })).toBe(true);
+    expect(isNoise({ title, documentNumber: "2025-123" })).toBe(false);
+  });
+
+  it("drops tariff-rate quota notices, keeps other quota notices", () => {
+    expect(isNoise({ title: "Establishment of a Tariff-Rate Quota for Raw Cane Sugar" })).toBe(true);
+    const keep = "Establishment of an Import Quota for Raw Cane Sugar";
+    expect(isNoise({ title: keep })).toBe(false);
+  });
+
+  it("drops denials of export privileges, keeps reinstatements", () => {
+    expect(isNoise({ title: "Order Denying Export Privileges; John Smith" })).toBe(true);
+    expect(isNoise({ title: "Temporary Denial of Export Privileges; Jane Doe" })).toBe(true);
+    const keep = "Reinstatement of Export Privileges";
+    expect(isNoise({ title: keep })).toBe(false);
+  });
+
+  it("drops Privacy Act of 1974 notices, keeps other Privacy Act notices", () => {
+    expect(isNoise({ title: "Privacy Act of 1974; Matching Program" })).toBe(true);
+    const keep = "Privacy Act Systems of Records Modernization";
+    expect(isNoise({ title: keep })).toBe(false);
+  });
+
+  it("drops advisory committee notices, keeps advisory panel notices", () => {
+    expect(isNoise({ title: "Charter: National Advisory Committee on Shipbuilding" })).toBe(true);
+    const keep = "Renewal of the Advisory Panel on Shipbuilding";
+    expect(isNoise({ title: keep })).toBe(false);
+  });
+
+  it("drops performance review board notices, keeps other performance notices", () => {
+    expect(isNoise({ title: "Senior Executive Service: Performance Review Board Members" })).toBe(true);
+    const keep = "Senior Executive Service: Performance Appraisal Review Board";
+    expect(isNoise({ title: keep })).toBe(false);
+  });
+});
+
+describe("noise pattern coverage", () => {
+  it("covers every NOISE_PATTERNS entry (add a test when adding a pattern)", () => {
+    expect(NOISE_PATTERNS.length).toBe(13);
+  });
+
+  it("AD_CVD_RE is the first noise pattern (Section 232 override depends on identity)", () => {
+    expect(NOISE_PATTERNS[0]).toBe(AD_CVD_RE);
+  });
+});

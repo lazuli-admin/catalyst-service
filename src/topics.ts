@@ -14,7 +14,7 @@ export const TOPICS: Topic[] = [
   {
     id: "semis-export-controls",
     label: "Semiconductor export controls",
-    patterns: [/semiconductor|integrated circuit|advanced comput|supercomput|foundry|\bchips?\b|entity list|\bIC designer|AI chip|end-user controls|affiliates of (certain )?listed entities|affiliates rule/i],
+    patterns: [/semiconductor|integrated circuit|advanced comput|supercomput|foundry|\bchips?\b|entity list|\bIC designer|AI chip|end-user controls|affiliates? (of|rule)[^.]{0,40}(listed|entit|end[- ]user)|(50|fifty)[- ]percent rule/i],
     themes: ["semiconductor export controls"],
     affectedTickers: ["NVDA", "AMD", "AMAT", "LRCX", "KLAC", "ASML", "TSM", "MU"],
   },
@@ -154,6 +154,37 @@ export const TOPICS: Topic[] = [
     affectedTickers: ["DASH", "UBER", "WMT", "TGT"],
   },
   {
+    id: "trade-remedy",
+    label: "Trade remedies (AD/CVD)",
+    patterns: [/affirmative (preliminary |final )?(determination|countervailing)|sales at less than fair value|antidumping duty order|countervailing duty order|antidumping and countervailing duty orders/i],
+    themes: ["trade remedies"],
+    // tickers are hand-curated, illustrative (rebar/steel, solar, trailers)
+    affectedTickers: ["NUE", "STLD", "CMC", "FSLR", "WNC"],
+  },
+  {
+    id: "swaps-margining",
+    label: "Swaps & margining",
+    patterns: [/\bswaps?\b|security-based swap|portfolio margin|cross-margin|clearing agenc/i],
+    themes: ["derivatives markets"],
+    // tickers are hand-curated, illustrative
+    affectedTickers: ["CME", "ICE", "CBOE", "GS", "MS"],
+  },
+  {
+    id: "submarine-cables",
+    label: "Submarine cables & network security",
+    patterns: [/submarine cable|undersea cable|cable landing/i],
+    themes: ["submarine cables"],
+    // tickers are hand-curated, illustrative
+    affectedTickers: ["GLW", "CIEN", "META", "GOOGL"],
+  },
+  {
+    id: "usmca-trade-agreements",
+    label: "USMCA / trade agreements",
+    patterns: [/\bUSMCA\b|United States-Mexico-Canada|agreement between the united states of america, the united mexican states, and canada|free trade agreement/i],
+    themes: ["trade agreements"],
+    affectedTickers: [],
+  },
+  {
     id: "china-trade",
     label: "China trade",
     patterns: [/\bChin(?:a|ese)\b|\bPRC\b/i],
@@ -163,15 +194,17 @@ export const TOPICS: Topic[] = [
   {
     id: "tariffs-301-232",
     label: "Tariffs (301/232)",
-    patterns: [/section 301|section 232|section 122|\bIEEPA\b|reciprocal tariff|product exclusions?|tariff (actions?|modification|increase)/i],
+    patterns: [/section 301|section 232|section 122|\bIEEPA\b|reciprocal tariff|product exclusions?|tariff (actions?|modification|increase)|acts, policies,? and practices|trade act of 1974/i],
     themes: ["tariffs"],
     affectedTickers: [],
   },
 ];
 
-/** AD/CVD case paperwork; a Section 232 title overrides this pattern only (see isNoise). */
-const AD_CVD_RE =
-  /antidumping|countervailing|less[- ]than[- ]fair[- ]value|administrative review|sunset review|new shipper|scope ruling/i;
+// routine AD/CVD case administration (reviews, results, rescissions, scope rulings, court decisions);
+// new preliminary/final determinations and orders are NOT noise and are picked up by the trade-remedy topic.
+// A Section 232 title overrides this pattern only (see isNoise).
+export const AD_CVD_RE =
+  /administrative reviews?|results of (the )?(antidumping|countervailing|expedited|changed circumstances|sunset)|rescission of (the )?(antidumping|countervailing|administrative|new shipper|.{0,40}review)|scope ruling|sunset reviews?|new shipper|changed circumstances review|continuation of (antidumping|countervailing)|covered merchandise referral|notice of court decision|circumvention inquir|anticircumvention|final results|preliminary results|postponement of preliminary|extension of (the )?time limit|revocation of (the )?(antidumping|countervailing|.{0,30}order)/i;
 
 /** One shared routine-paperwork noise list, applied to every agency. */
 export const NOISE_PATTERNS: RegExp[] = [
