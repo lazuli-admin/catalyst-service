@@ -30,10 +30,8 @@ const MARKER = "// clock-guard: pure-date";
 // requires updating this list, so pure-date usage stays a deliberate choice.
 const ALLOWLIST = [
   "src/catalysts/macro-primary.ts:41",
-  "src/catalysts/federal-register.ts:40",
-  "src/catalysts/federal-register.ts:51",
-  "src/catalysts/federal-register.ts:77",
-  "src/catalysts/federal-register.ts:119",
+  "src/catalysts/federal-register.ts:31",
+  "src/catalysts/federal-register.ts:57",
   "src/catalysts/fr-classify.ts:51",
   "src/catalysts/fr-classify.ts:55",
   "src/catalysts/calendars.ts:54",

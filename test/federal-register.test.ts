@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ELECTIONS, FR_AGENCIES, getLastFrSyncReport, syncElections, syncFederalRegister } from "../src/catalysts/federal-register.js";
-import { isRelevant } from "../src/topics.js";
+import { isRelevant, topicTags } from "../src/topics.js";
 import type { Catalyst } from "../src/types.js";
 
 const res = (body: unknown, ok = true) => ({ ok, status: ok ? 200 : 500, json: async () => body });
@@ -50,7 +50,7 @@ describe("syncFederalRegister", () => {
       status: "scheduled",
       dateStart: "2026-11-10",
       dateEnd: "2026-11-10",
-      datePrecision: "exact",
+      datePrecision: "estimated",
       confidence: 0.9,
       themes: ["semiconductor export controls"],
       affectedTickers: ["NVDA", "AMD", "AMAT", "LRCX", "KLAC", "ASML", "TSM", "MU"],
@@ -117,7 +117,7 @@ describe("syncFederalRegister", () => {
     const rows = catalysts(s);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      kind: "regulatory_decision",
+      kind: "comment_close",
       dateStart: "2026-11-09",
       dateEnd: "2026-11-09",
       dedupeKey: "fr:fcc-prop-1:comments:2026-11-09",
@@ -182,11 +182,13 @@ describe("syncFederalRegister", () => {
     const s = store();
     const started = new Date().toISOString();
     await syncFederalRegister(s, { ...opts, fetch: mockFetch({}) as unknown as typeof fetch });
-    expect(s.purgeStaleCatalysts).toHaveBeenCalledTimes(2);
+    expect(s.purgeStaleCatalysts).toHaveBeenCalledTimes(4);
     const [kind, from, before, keyPrefix] = s.purgeStaleCatalysts.mock.calls[0]!;
     expect([kind, from, keyPrefix]).toEqual(["rule_effective", opts.today, "fr:"]);
     expect(before >= started && before <= new Date().toISOString()).toBe(true);
-    expect(s.purgeStaleCatalysts.mock.calls[1]).toEqual(["regulatory_decision", opts.today, expect.any(String), "fr:"]);
+    expect(s.purgeStaleCatalysts.mock.calls[1]).toEqual(["comment_close", opts.today, expect.any(String), "fr:"]);
+    expect(s.purgeStaleCatalysts.mock.calls[2]).toEqual(["presidential_action", opts.today, expect.any(String), "fr:"]);
+    expect(s.purgeStaleCatalysts.mock.calls[3]).toEqual(["regulatory_decision", opts.today, expect.any(String), "fr:"]);
   });
 
   it("reports stale rows it purges: fetched doc with no topic match -> 'no topic match'", async () => {
@@ -391,8 +393,27 @@ describe("comments_close_on", () => {
     const rows = catalysts(s);
     expect(rows.map((r) => [r.kind, r.title, r.dedupeKey])).toEqual([
       ["rule_effective", "Section 301 Tariff Action on China", "fr:ustr-9:2026-11-05"],
-      ["regulatory_decision", "USTR comments close: Section 301 Tariff Action on China", "fr:ustr-9:comments:2026-11-12"],
+      ["comment_close", "USTR comments close: Section 301 Tariff Action on China", "fr:ustr-9:comments:2026-11-12"],
     ]);
+  });
+
+  it("topic assignment is invariant to agency", () => {
+    const agencyLabels = [...Object.values(FR_AGENCIES).map((a) => a.label), "President"];
+    const docs = [
+      { title: "Advanced computing chip rule", abstract: "", documentNumber: "chip-1" },
+      { title: "Spectrum Sharing in the 6 GHz Band", abstract: "", documentNumber: "fcc-1" },
+      { title: "Section 301 Tariff Action on China", abstract: "", documentNumber: "ustr-9" },
+    ];
+    for (const doc of docs) {
+      const baseTags = topicTags({ ...doc, agency: agencyLabels[0] });
+      const baseRelevant = isRelevant({ ...doc, agency: agencyLabels[0] });
+      expect(baseRelevant).toBe(true);
+      expect(baseTags.topics.length).toBeGreaterThan(0);
+      for (const agency of agencyLabels.slice(1)) {
+        expect(topicTags({ ...doc, agency })).toEqual(baseTags);
+        expect(isRelevant({ ...doc, agency })).toBe(baseRelevant);
+      }
+    }
   });
 
   it("ignores comments_close_on outside the window or malformed", async () => {

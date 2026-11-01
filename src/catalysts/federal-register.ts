@@ -2,6 +2,7 @@
 import type { Store } from "../db.js";
 import { errorMessage } from "../util.js";
 import { isNoise, isRelevant, NOISE_PATTERNS, topicTags } from "../topics.js";
+import { classify, type FrApiDoc } from "./fr-classify.js";
 
 const TIMEOUT_MS = 15_000;
 
@@ -25,27 +26,6 @@ export const ELECTIONS: { date: string; title: string }[] = [
 ];
 
 const ELECTION_SOURCE_URL = "https://www.usa.gov/midterm-state-and-local-elections";
-
-const MONTHS = "Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?";
-/** "end(s)/expire(s)/until/through/terminate(s) <Month D, YYYY>" in rule abstracts. */
-const END_DATE_RE = new RegExp(
-  String.raw`\b(?:end|ends|expire|expires|until|through|terminate|terminates)\s+((?:${MONTHS})\s+\d{1,2},\s*\d{4})\b`,
-  "i",
-);
-
-function parseAbstractEndDate(abstract: string): string | null {
-  const m = END_DATE_RE.exec(abstract);
-  if (!m) return null;
-  const ts = Date.parse(`${m[1]!.replace(/\s+/g, " ")} UTC`);
-  return Number.isFinite(ts) ? new Date(ts).toISOString().slice(0, 10) : null; // clock-guard: pure-date
-}
-
-const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-/** "Nov 9" from YYYY-MM-DD. */
-function fmtDate(date: string): string {
-  const [, m = 1, d = 1] = date.split("-").map(Number);
-  return `${MONTH_SHORT[m - 1]} ${d}`;
-}
 
 function horizonEnd(today: string, horizonDays: number): string {
   return new Date(Date.parse(`${today}T00:00:00Z`) + horizonDays * 86_400_000).toISOString().slice(0, 10); // clock-guard: pure-date
@@ -94,7 +74,17 @@ export async function syncFederalRegister(
         const abstract = typeof row.abstract === "string" ? row.abstract : "";
         if (!title || !documentNumber) continue;
         // Relevance is decided by TOPIC, never agency; corrections are already covered by isNoise.
-        const doc = { title, abstract, type: row.type as string, documentNumber };
+        const doc: FrApiDoc = {
+          title,
+          abstract,
+          type: row.type as string,
+          document_number: documentNumber,
+          html_url: htmlUrl,
+          agencyLabel: agency.label,
+          dates: typeof row.dates === "string" ? row.dates : null,
+          effective_on: typeof row.effective_on === "string" ? row.effective_on : null,
+          comments_close_on: typeof row.comments_close_on === "string" ? row.comments_close_on : null,
+        };
         if (isNoise(doc)) {
           dropReasons.set(documentNumber, `noise:${NOISE_PATTERNS.find((p) => p.test(title))?.source ?? "correction"}`);
           continue;
@@ -103,94 +93,31 @@ export async function syncFederalRegister(
           dropReasons.set(documentNumber, "no topic match");
           continue;
         }
-        let upserted = false;
+        const events = classify(doc, { today: opts.today, end });
+        if (events.length === 0) {
+          dropReasons.set(documentNumber, "out of window");
+          continue;
+        }
         const tags = topicTags(doc);
-        // Effective-date candidates keep the plain title; abstract end dates shift to the NEXT day (rule back in force).
-        const inWindow = (d: string) => d >= opts.today && d <= end;
-        const candidates: { date: string; isEnd: boolean }[] = [];
-        // Proposed rules have no effective date; FR puts the comment deadline there.
-        if (row.type !== "Proposed Rule" && typeof row.effective_on === "string" && /^\d{4}-\d{2}-\d{2}$/.test(row.effective_on) && inWindow(row.effective_on)) {
-          candidates.push({ date: row.effective_on, isEnd: false });
-        }
-        const abstractEnd = /suspen|pause/i.test(abstract) && !/^(request for comments|applications for)/i.test(title)
-          ? parseAbstractEndDate(abstract)
-          : null;
-        if (abstractEnd) {
-          const next = new Date(Date.parse(`${abstractEnd}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10); // clock-guard: pure-date
-          if (inWindow(next)) candidates.push({ date: next, isEnd: true });
-        }
-        const seen = new Set<string>();
-        for (const { date, isEnd } of candidates) {
-          if (seen.has(date)) continue;
-          seen.add(date);
-          const display = isEnd
-            ? `${/affiliat|end-user/i.test(title) ? `${agency.label} affiliates rule` : `${agency.label}: rule`} back in force ${fmtDate(date)} (suspension ends ${fmtDate(abstractEnd!)}) — ${title}`
-            : title;
-          upserted = true;
+        for (const ev of events) {
+          // dateSource is not persisted: the catalysts table has no column for it.
           await store.upsertCatalyst({
             ticker: null,
-            title: display,
-            kind: "rule_effective",
+            title: ev.title,
+            kind: ev.kind,
             status: "scheduled",
-            dateStart: date,
-            dateEnd: date,
-            datePrecision: "exact",
+            dateStart: ev.date,
+            dateEnd: ev.date,
+            datePrecision: ev.datePrecision,
             confidence: 0.9,
             themes: tags.themes,
             affectedTickers: tags.affectedTickers,
             sourceTier: 1,
-            sourceUrl: htmlUrl,
+            sourceUrl: ev.sourceUrl,
             observationId: null,
-            dedupeKey: `fr:${documentNumber}:${date}`,
+            dedupeKey: ev.dedupeKey,
           });
         }
-        const commentsOn = typeof row.comments_close_on === "string" && /^\d{4}-\d{2}-\d{2}$/.test(row.comments_close_on) ? row.comments_close_on : null;
-        // Proposed rule: effective_on is the initial comment deadline, comments_close_on the reply deadline.
-        const proposedInitial =
-          row.type === "Proposed Rule" && commentsOn !== null && typeof row.effective_on === "string" &&
-          /^\d{4}-\d{2}-\d{2}$/.test(row.effective_on) && row.effective_on < commentsOn
-            ? row.effective_on
-            : null;
-        if (proposedInitial && commentsOn && inWindow(proposedInitial)) {
-          // Relevance already covers comment-close rows; no extra filter needed.
-          upserted = true;
-          await store.upsertCatalyst({
-            ticker: null,
-            title: `${agency.label} comments close ${fmtDate(proposedInitial)} (replies ${fmtDate(commentsOn)}): ${title}`,
-            kind: "regulatory_decision",
-            status: "scheduled",
-            dateStart: proposedInitial,
-            dateEnd: proposedInitial,
-            datePrecision: "exact",
-            confidence: 0.9,
-            themes: tags.themes,
-            affectedTickers: tags.affectedTickers,
-            sourceTier: 1,
-            sourceUrl: htmlUrl,
-            observationId: null,
-            dedupeKey: `fr:${documentNumber}:comments:${proposedInitial}`,
-          });
-        } else if (commentsOn && inWindow(commentsOn)) {
-          // Relevance already covers comment-close rows; no extra filter needed.
-          upserted = true;
-          await store.upsertCatalyst({
-            ticker: null,
-            title: `${agency.label} comments close: ${title}`,
-            kind: "regulatory_decision",
-            status: "scheduled",
-            dateStart: commentsOn,
-            dateEnd: commentsOn,
-            datePrecision: "exact",
-            confidence: 0.9,
-            themes: tags.themes,
-            affectedTickers: tags.affectedTickers,
-            sourceTier: 1,
-            sourceUrl: htmlUrl,
-            observationId: null,
-            dedupeKey: `fr:${documentNumber}:comments:${commentsOn}`,
-          });
-        }
-        if (!upserted) dropReasons.set(documentNumber, "out of window");
       }
     } catch (err) {
       allAgenciesOk = false;
@@ -200,7 +127,8 @@ export async function syncFederalRegister(
   // Only delete rows the current code would have refreshed; a partial run must not wipe fresh-looking old rows.
   if (allAgenciesOk) {
     const drops: FrDrop[] = [];
-    for (const kind of ["rule_effective", "regulatory_decision"] as const) {
+    const FR_KINDS = ["rule_effective", "comment_close", "presidential_action", "regulatory_decision"] as const;
+    for (const kind of FR_KINDS) {
       const stale = await store.listStaleCatalysts(kind, opts.today, runStart, "fr:");
       for (const row of stale) {
         const docNumber = row.dedupeKey.split(":")[1] ?? "";
@@ -210,8 +138,7 @@ export async function syncFederalRegister(
       }
     }
     lastFrSyncReport = { at: new Date().toISOString(), count: drops.length, drops };
-    await store.purgeStaleCatalysts("rule_effective", opts.today, runStart, "fr:");
-    await store.purgeStaleCatalysts("regulatory_decision", opts.today, runStart, "fr:");
+    for (const kind of FR_KINDS) await store.purgeStaleCatalysts(kind, opts.today, runStart, "fr:");
   }
 }
 

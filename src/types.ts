@@ -89,6 +89,8 @@ export type CatalystKind =
   | "conference"
   | "peer_read_across"
   | "litigation"
+  | "comment_close"
+  | "presidential_action"
   | "other";
 
 export type CatalystStatus = "lead" | "scheduled" | "confirmed" | "done" | "cancelled";
