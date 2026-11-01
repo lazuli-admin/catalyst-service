@@ -1,58 +1,20 @@
 // Deterministic structured catalysts: Federal Register rules (public JSON API, no key) + static elections calendar. No LLM.
 import type { Store } from "../db.js";
 import { errorMessage } from "../util.js";
+import { isRelevant, topicTags } from "../topics.js";
 
 const TIMEOUT_MS = 15_000;
 
-/** slug -> agency label (used in catalyst titles), themes and tickers affected by its rules. */
-export const FR_AGENCIES: Record<string, { label: string; themes: string[]; affectedTickers: string[] }> = {
-  "industry-and-security-bureau": {
-    label: "BIS",
-    themes: ["semiconductor export controls"],
-    affectedTickers: ["NVDA", "AMD", "AMAT", "LRCX", "KLAC", "ASML", "TSM", "MU"],
-  },
-  "trade-representative-office-of-united-states": { label: "USTR", themes: ["tariffs"], affectedTickers: [] },
-  "federal-trade-commission": { label: "FTC", themes: ["antitrust"], affectedTickers: [] },
-  "federal-communications-commission": { label: "FCC", themes: ["telecom"], affectedTickers: [] },
-  "international-trade-administration": { label: "ITA", themes: ["trade remedies"], affectedTickers: [] },
-  "u-s-customs-and-border-protection": { label: "CBP", themes: ["customs"], affectedTickers: [] },
-  "securities-and-exchange-commission": { label: "SEC", themes: ["securities rules"], affectedTickers: [] },
+/** slug -> agency label (used in catalyst titles). Relevance is decided by TOPIC, never agency; tickers are hand-curated, illustrative, reviewed manually (see src/topics.ts). */
+export const FR_AGENCIES: Record<string, { label: string }> = {
+  "industry-and-security-bureau": { label: "BIS" },
+  "trade-representative-office-of-united-states": { label: "USTR" },
+  "federal-trade-commission": { label: "FTC" },
+  "federal-communications-commission": { label: "FCC" },
+  "international-trade-administration": { label: "ITA" },
+  "u-s-customs-and-border-protection": { label: "CBP" },
+  "securities-and-exchange-commission": { label: "SEC" },
 };
-
-/** USTR/ITA/CBP rules outside these trade topics are noise. */
-export const TRADE_RE = /tariff|dut(y|ies)|section 301|section 232|section 122|ieepa|reciprocal|exclusion|suspension|de minimis|low-value|semiconductor|critical mineral|rare earth|steel|aluminum|copper|lumber|automobile|auto parts|pharmaceutical|china|prc|export control|entity list|sanction|robotics|wind turbine|polysilicon|solar/i;
-
-/** Routine ITA antidumping paperwork unless it's a Section 232 action. */
-export const ITA_DROP_RE = /administrative review|sunset review|new shipper|scope ruling|rescission|preliminary results|final results/i;
-
-/** SEC housekeeping/noise titles (exact leading phrases). */
-export const SEC_DROP_PREFIXES = ["Self-Regulatory Organizations", "Submission for OMB Review", "Sunshine Act"];
-
-/** FCC rules outside these topics (e.g. radio license transfers) are noise. */
-export const FCC_TITLE_RE = /spectrum|broadband|net neutrality|satellite|merger/i;
-
-/** BIS rules outside these topics (e.g. silencers/mufflers export controls) are noise. */
-export const SEMI_TOPIC_RE = /semiconductor|advanced comput|integrated circuit|entity list|affiliat|end-user|artificial intelligence|supercomput|foundry|\bchips?\b/i;
-
-/** Comment-close noise filter: drop boilerplate petitions/review lists, then per-agency topic keep-lists. */
-export function keepCommentClose(agencyLabel: string, title: string): boolean {
-  if (/^(petition for rulemaking|list of rules to be reviewed)/i.test(title)) return false;
-  switch (agencyLabel) {
-    case "USTR":
-    case "BIS":
-    case "CBP":
-    case "FCC":
-      return true;
-    case "ITA":
-      return /section 232/i.test(title);
-    case "SEC":
-      return /crypto|digital asset|proxy|14a-8|shareholder proposal|market structure|short sale|climate/i.test(title);
-    case "FTC":
-      return /merger|premerger|hart-scott|non-?compete/i.test(title);
-    default:
-      return true;
-  }
-}
 
 /** Fixed-date political events. */
 export const ELECTIONS: { date: string; title: string }[] = [
@@ -120,14 +82,10 @@ export async function syncFederalRegister(
         const htmlUrl = typeof row.html_url === "string" ? row.html_url : null;
         const abstract = typeof row.abstract === "string" ? row.abstract : "";
         if (!title || !documentNumber) continue;
-        if (/^C\d-/.test(documentNumber)) continue; // correction documents are noise
-        if (agency.label === "FCC" && !FCC_TITLE_RE.test(title)) continue;
-        if (agency.label === "BIS" && !SEMI_TOPIC_RE.test(`${title} ${abstract}`)) continue;
-        if (agency.label === "USTR" || agency.label === "ITA" || agency.label === "CBP") {
-          if (!TRADE_RE.test(`${title} ${abstract}`)) continue;
-          if (agency.label === "ITA" && ITA_DROP_RE.test(title) && !/section 232/i.test(title)) continue;
-        }
-        if (agency.label === "SEC" && SEC_DROP_PREFIXES.some((p) => title.startsWith(p))) continue;
+        // Relevance is decided by TOPIC, never agency; corrections are already covered by isNoise.
+        const doc = { title, abstract, type: row.type as string, documentNumber };
+        if (!isRelevant(doc)) continue;
+        const tags = topicTags(doc);
         // Effective-date candidates keep the plain title; abstract end dates shift to the NEXT day (rule back in force).
         const inWindow = (d: string) => d >= opts.today && d <= end;
         const candidates: { date: string; isEnd: boolean }[] = [];
@@ -158,8 +116,8 @@ export async function syncFederalRegister(
             dateEnd: date,
             datePrecision: "exact",
             confidence: 0.9,
-            themes: agency.themes,
-            affectedTickers: agency.affectedTickers,
+            themes: tags.themes,
+            affectedTickers: tags.affectedTickers,
             sourceTier: 1,
             sourceUrl: htmlUrl,
             observationId: null,
@@ -173,7 +131,8 @@ export async function syncFederalRegister(
           /^\d{4}-\d{2}-\d{2}$/.test(row.effective_on) && row.effective_on < commentsOn
             ? row.effective_on
             : null;
-        if (proposedInitial && commentsOn && inWindow(proposedInitial) && keepCommentClose(agency.label, title)) {
+        if (proposedInitial && commentsOn && inWindow(proposedInitial)) {
+          // Relevance already covers comment-close rows; no extra filter needed.
           await store.upsertCatalyst({
             ticker: null,
             title: `${agency.label} comments close ${fmtDate(proposedInitial)} (replies ${fmtDate(commentsOn)}): ${title}`,
@@ -183,14 +142,15 @@ export async function syncFederalRegister(
             dateEnd: proposedInitial,
             datePrecision: "exact",
             confidence: 0.9,
-            themes: agency.themes,
-            affectedTickers: agency.affectedTickers,
+            themes: tags.themes,
+            affectedTickers: tags.affectedTickers,
             sourceTier: 1,
             sourceUrl: htmlUrl,
             observationId: null,
             dedupeKey: `fr:${documentNumber}:comments:${proposedInitial}`,
           });
-        } else if (commentsOn && inWindow(commentsOn) && keepCommentClose(agency.label, title)) {
+        } else if (commentsOn && inWindow(commentsOn)) {
+          // Relevance already covers comment-close rows; no extra filter needed.
           await store.upsertCatalyst({
             ticker: null,
             title: `${agency.label} comments close: ${title}`,
@@ -200,8 +160,8 @@ export async function syncFederalRegister(
             dateEnd: commentsOn,
             datePrecision: "exact",
             confidence: 0.9,
-            themes: agency.themes,
-            affectedTickers: agency.affectedTickers,
+            themes: tags.themes,
+            affectedTickers: tags.affectedTickers,
             sourceTier: 1,
             sourceUrl: htmlUrl,
             observationId: null,

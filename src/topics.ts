@@ -1,0 +1,219 @@
+/**
+ * Topic map for Federal Register relevance: relevance is decided by TOPIC, never agency.
+ * Tickers are hand-curated, illustrative, and reviewed manually.
+ */
+export interface Topic {
+  id: string;
+  label: string;
+  patterns: RegExp[];
+  themes: string[];
+  affectedTickers: string[];
+}
+
+export const TOPICS: Topic[] = [
+  {
+    id: "semis-export-controls",
+    label: "Semiconductor export controls",
+    patterns: [/semiconductor|integrated circuit|advanced comput|supercomput|foundry|\bchips?\b|entity list|\bIC designer|AI chip/i],
+    themes: ["semiconductor export controls"],
+    affectedTickers: ["NVDA", "AMD", "AMAT", "LRCX", "KLAC", "ASML", "TSM", "MU"],
+  },
+  {
+    id: "critical-minerals",
+    label: "Critical minerals",
+    patterns: [/critical mineral|rare earth|\bDPAS\b|lithium|cobalt|graphite|gallium|germanium/i],
+    themes: ["critical minerals"],
+    affectedTickers: ["MP", "ALB", "LAC"],
+  },
+  {
+    id: "steel-aluminum-copper",
+    label: "Steel, aluminum & copper",
+    patterns: [/section 232.{0,40}(steel|alumin|copper)|(steel|aluminum|copper) (tariff|import|derivative)/i],
+    themes: ["metals tariffs"],
+    affectedTickers: ["NUE", "STLD", "CLF", "X", "AA", "CENX", "FCX"],
+  },
+  {
+    id: "autos",
+    label: "Autos",
+    patterns: [/automobile|auto parts|light truck|vehicles? tariff/i],
+    themes: ["autos"],
+    affectedTickers: ["GM", "F", "TSLA", "STLA", "TM"],
+  },
+  {
+    id: "pharma",
+    label: "Pharma",
+    patterns: [/pharmaceutical|drug pricing|prescription drug|pharmacy benefit|\bPBM\b|Express Scripts|insulin/i],
+    themes: ["pharma"],
+    affectedTickers: ["LLY", "PFE", "MRK", "ABBV", "JNJ", "CI", "CVS", "UNH"],
+  },
+  {
+    id: "solar-polysilicon",
+    label: "Solar & polysilicon",
+    patterns: [/polysilicon|solar cell|photovoltaic|\bsolar\b/i],
+    themes: ["solar"],
+    affectedTickers: ["FSLR", "ENPH"],
+  },
+  {
+    id: "wind",
+    label: "Wind",
+    patterns: [/wind turbine|offshore wind/i],
+    themes: ["wind energy"],
+    affectedTickers: ["GEV", "NEE"],
+  },
+  {
+    id: "drones",
+    label: "Drones",
+    patterns: [/\bdrones?\b|unmanned aircraft|\bUAS\b/i],
+    themes: ["drones"],
+    affectedTickers: ["AVAV", "KTOS", "RCAT"],
+  },
+  {
+    id: "robotics",
+    label: "Robotics",
+    patterns: [/robotic/i],
+    themes: ["robotics"],
+    affectedTickers: ["ISRG", "TER", "ROK"],
+  },
+  {
+    id: "shipping-maritime",
+    label: "Shipping & maritime",
+    patterns: [/shipbuilding|maritime|port fees|vessel fees|ship-to-shore crane/i],
+    themes: ["shipping & maritime"],
+    affectedTickers: ["ZIM", "MATX", "HII", "GD"],
+  },
+  {
+    id: "lumber",
+    label: "Lumber",
+    patterns: [/lumber|softwood|timber/i],
+    themes: ["lumber"],
+    affectedTickers: ["WY", "PCH"],
+  },
+  {
+    id: "de-minimis",
+    label: "De minimis",
+    patterns: [/de minimis|low-value shipments?|postal informal entry/i],
+    themes: ["de minimis"],
+    affectedTickers: ["AMZN", "PDD", "ETSY", "EBAY"],
+  },
+  {
+    id: "crypto",
+    label: "Crypto",
+    patterns: [/crypto|digital asset|stablecoin|blockchain/i],
+    themes: ["crypto"],
+    affectedTickers: ["COIN", "HOOD", "MSTR"],
+  },
+  {
+    id: "proxy-shareholder",
+    label: "Proxy & shareholder rules",
+    patterns: [/proxy|shareholder proposal|14a-8/i],
+    themes: ["shareholder rules"],
+    affectedTickers: [],
+  },
+  {
+    id: "telecom-spectrum",
+    label: "Telecom & spectrum",
+    patterns: [/spectrum|C-band|broadband|satellite|space (modernization|launch|station)|net neutrality|\bGHz\b/i],
+    themes: ["telecom"],
+    affectedTickers: ["T", "VZ", "TMUS", "SATS", "ASTS"],
+  },
+  {
+    id: "banking-capital",
+    label: "Banking capital",
+    patterns: [/capital requirements|Basel|supplementary leverage|stress capital/i],
+    themes: ["banking capital"],
+    affectedTickers: ["JPM", "BAC", "C", "WFC", "GS", "MS"],
+  },
+  {
+    id: "energy-lng",
+    label: "Energy & LNG",
+    patterns: [/\bLNG\b|liquefied natural gas|crude oil export|petroleum/i],
+    themes: ["energy exports"],
+    affectedTickers: ["LNG", "CQP", "XOM"],
+  },
+  {
+    id: "ai-datacenters",
+    label: "AI & data centers",
+    // \bAI\b only counts when followed by an export/chip/model/computing qualifier.
+    patterns: [/artificial intelligence|data cent(er|re)|\bAI\b(?=.{0,60}(?:export|chip|model|comput))/i],
+    themes: ["ai & data centers"],
+    affectedTickers: ["MSFT", "GOOGL", "AMZN", "META", "ORCL"],
+  },
+  {
+    id: "consumer-retail-tariffs",
+    label: "Consumer & retail",
+    patterns: [/online food delivery|junk fees?|import disclosure|supply chain visibility/i],
+    themes: ["consumer & retail"],
+    affectedTickers: ["DASH", "UBER", "WMT", "TGT"],
+  },
+  {
+    id: "china-trade",
+    label: "China trade",
+    patterns: [/\bChin(?:a|ese)\b|\bPRC\b/i],
+    themes: ["china"],
+    affectedTickers: [],
+  },
+  {
+    id: "tariffs-301-232",
+    label: "Tariffs (301/232)",
+    patterns: [/section 301|section 232|section 122|\bIEEPA\b|reciprocal tariff|product exclusions?|tariff (actions?|modification|increase)/i],
+    themes: ["tariffs"],
+    affectedTickers: [],
+  },
+];
+
+/** AD/CVD case paperwork; a Section 232 title overrides this pattern only (see isNoise). */
+const AD_CVD_RE =
+  /antidumping|countervailing|less[- ]than[- ]fair[- ]value|administrative review|sunset review|new shipper|scope ruling/i;
+
+/** One shared routine-paperwork noise list, applied to every agency. */
+export const NOISE_PATTERNS: RegExp[] = [
+  AD_CVD_RE,
+  /information collection|submission (to|for) (the )?OMB|paperwork reduction/i,
+  /^sunshine act/i,
+  /^self-regulatory organizations/i,
+  /petition for rulemaking|petition for reconsideration/i,
+  /commercial gauger|commercial laborator/i,
+  /list of rules to be reviewed/i,
+  /; correction$|^correction/i,
+  /tariff-rate quota/i,
+  /denying export privileges|temporary denial|denial of export privileges/i,
+  /privacy act of 1974/i,
+  /advisory committee/i,
+  /performance review board/i,
+];
+
+export interface FrDoc {
+  title: string;
+  abstract?: string | null;
+  type?: string | null;
+  agency?: string;
+  documentNumber?: string;
+}
+
+export function classifyTopics(text: string): Topic[] {
+  return TOPICS.filter((t) => t.patterns.some((p) => p.test(text)));
+}
+
+export function isNoise(doc: FrDoc): boolean {
+  if (doc.documentNumber && /^C\d-/.test(doc.documentNumber)) return true; // correction documents
+  const s232 = /section 232/i.test(doc.title);
+  const text = doc.title;
+  for (const p of NOISE_PATTERNS) {
+    if (p === AD_CVD_RE && s232) continue; // Section 232 titles override AD/CVD paperwork noise only
+    if (p.test(text)) return true;
+  }
+  return false;
+}
+
+export function isRelevant(doc: FrDoc): boolean {
+  return !isNoise(doc) && classifyTopics(`${doc.title} ${doc.abstract ?? ""}`).length > 0;
+}
+
+export function topicTags(doc: FrDoc): { themes: string[]; affectedTickers: string[]; topics: string[] } {
+  const matched = classifyTopics(`${doc.title} ${doc.abstract ?? ""}`);
+  return {
+    themes: [...new Set(matched.flatMap((t) => t.themes))],
+    affectedTickers: [...new Set(matched.flatMap((t) => t.affectedTickers))],
+    topics: matched.map((t) => t.id),
+  };
+}
