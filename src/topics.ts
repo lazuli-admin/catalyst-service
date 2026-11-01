@@ -2,6 +2,7 @@
  * Topic map for Federal Register relevance: relevance is decided by TOPIC, never agency.
  * Tickers are hand-curated, illustrative, and reviewed manually.
  */
+import { consentPartyTickers } from "./company-universe.js";
 export interface Topic {
   id: string;
   label: string;
@@ -274,6 +275,8 @@ export const NOISE_PATTERNS: RegExp[] = [
   /^continuation of the national emergency\b(?![^]*\band\s+(?:expan|modif|amend|impos|addition|new))/i,
   // technical corrections are noise only when the correction is the whole change (kept when paired with additions, e.g. "and Technical Corrections" or "Technical Correction and ...")
   /^(?!.*(\btechnical corrections?\s+(and|&)\s+\w|\b(and|&)\s+technical corrections?\b)).*\btechnical corrections?\b/i,
+  // USMCA/NAFTA binational panel procedure: roster applications, calls for applications, and panel-review docket notices
+  /\bbinational panels?\s+roster\b|\bapplications?\s+for\s+inclusion\s+on\b.{0,80}\broster\b|\bcall\s+for\s+applications\b|(?:usmca|nafta|binational panel)[^;]{0,80};?\s*(?:notice of\s+)?(?:request for panel review|completion of panel review|termination of panel review|first request for panel review)\b/i,
 ];
 
 export interface FrDoc {
@@ -299,15 +302,28 @@ export function isNoise(doc: FrDoc): boolean {
   return false;
 }
 
+// Ceremonial/proclamation presidential documents (commemorations, honors, flag half-staff, holiday closings) are kept by default:
+// presidential relevance needs no topic, only absence of ceremony.
+export const CEREMONIAL_PRESIDENTIAL_RE = /^national\b[^;]{0,80}\b(?:day|week|month|year)\b|\b(?:day|week|month)\b,?\s+\d{4}$|\b(?:day|week|month)\s+of\s+(?:prayer|remembrance|observance|recognition|thanksgiving|mourning)\b|\bobservance\b|\banniversary\b|\bhonou?ring\b|\bin\s+(?:memory|honou?r)\s+of\b|\bdeath\s+of\b|\bhalf[- ]staff\b|\bflags?\b.{0,40}\bhalf\b|\bclosing\s+of\s+executive\s+departments\b|\bthanksgiving\s+day\b/i;
+
+export function isCeremonialPresidential(doc: FrDoc): boolean {
+  return doc.type === "Presidential Document" && CEREMONIAL_PRESIDENTIAL_RE.test(doc.title);
+}
+
 export function isRelevant(doc: FrDoc): boolean {
-  return !isNoise(doc) && classifyTopics(`${doc.title} ${doc.abstract ?? ""}`).length > 0;
+  if (isNoise(doc)) return false;
+  if (doc.type === "Presidential Document") return !isCeremonialPresidential(doc);
+  if (consentPartyTickers(doc.title).length > 0) return true;
+  return classifyTopics(`${doc.title} ${doc.abstract ?? ""}`).length > 0;
 }
 
 export function topicTags(doc: FrDoc): { themes: string[]; affectedTickers: string[]; topics: string[] } {
   const matched = classifyTopics(`${doc.title} ${doc.abstract ?? ""}`);
   return {
     themes: [...new Set(matched.flatMap((t) => t.themes))],
-    affectedTickers: [...new Set(matched.flatMap((t) => t.affectedTickers))],
+    affectedTickers: [
+      ...new Set([...matched.flatMap((t) => t.affectedTickers), ...consentPartyTickers(doc.title).map((m) => m.ticker)]),
+    ],
     topics: matched.map((t) => t.id),
   };
 }
