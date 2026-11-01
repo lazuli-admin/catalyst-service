@@ -60,7 +60,7 @@ describe("syncCalendars", () => {
     expect(s.purgeLegacyMacro).toHaveBeenCalledTimes(1);
     expect(counts).toEqual({ earnings: 0, macro: 1 });
     const macro = s.upsertCatalyst.mock.calls.map(([c]) => c as Catalyst & { dedupeKey: string }).filter((c) => c.kind === "macro");
-    expect(macro).toEqual([expect.objectContaining({ title: "FOMC rate decision (meeting Feb 16–Feb 17)", dateStart: "2026-02-17", dateEnd: "2026-02-17", dedupeKey: "fed:fomc:2026-02-16", confidence: 1, sourceTier: 1 })]);
+    expect(macro).toEqual([expect.objectContaining({ title: "FOMC rate decision Feb 17 (meeting Feb 16–Feb 17) · decision 2:00 PM ET", dateStart: "2026-02-16", dateEnd: "2026-02-17", dedupeKey: "fed:fomc:2026-02-16", confidence: 1, sourceTier: 1 })]);
   });
 
   it("tags megacap theme at the 200e9 boundary", async () => {
