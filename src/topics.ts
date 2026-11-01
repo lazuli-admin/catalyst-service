@@ -166,7 +166,7 @@ export const TOPICS: Topic[] = [
     label: "Swaps & margining",
     patterns: [
       // bare "swap(s)" with general negative lookarounds to drop swap data repositories, currency/liquidity swaps, swap lines, and fund-affiliate swaps
-      /(?<!debt[- ]for[- ]nature |currency[- ]|liquidity[- ])\bswaps?\b(?!\s*(?:data repositor|lines?|with affiliated))|security-based swap|portfolio margin|cross-margin|clearing requirement determinations?|clearing agenc/i,
+      /(?<!debt[- ]for[- ]nature |(?<!cross[- ])currency[- ]|liquidity[- ])\bswaps?\b(?!\s*(?:data repositor|lines?|with affiliated))|security-based swap|portfolio margin|cross-margin|clearing requirement determinations?|clearing agenc/i,
     ],
     themes: ["derivatives markets"],
     // tickers are hand-curated, illustrative
@@ -176,9 +176,9 @@ export const TOPICS: Topic[] = [
     id: "submarine-cables",
     label: "Submarine cables & network security",
     patterns: [
-      /(submarine|undersea|subsea)\W+(\w+\W+){0,3}cables?/i,
+      /^(?![\s\S]*\b(environmental assessments?|environmental impact statements?|EIS|finding of no significant impact|FONSI)\b)[\s\S]*(submarine|undersea|subsea)\W+(\w+\W+){0,3}cables?/i,
       // "cable landing" only when it is a regulatory/telecom action (e.g. license issuance or related rules)
-      /cable landing (licen[cs]e|rules|act|applications?|stations?)|licen[cs]e[^.]{0,40}cable landing/i,
+      /^(?![\s\S]*\b(environmental assessments?|environmental impact statements?|EIS|finding of no significant impact|FONSI)\b)[\s\S]*(?:cable landing (licen[cs]e|rules|act|applications?|stations?)|licen[cs]e[^.]{0,40}cable landing)/i,
     ],
     themes: ["submarine cables"],
     // tickers are hand-curated, illustrative
@@ -210,7 +210,7 @@ export const TOPICS: Topic[] = [
       // options on ETFs/trusts holding crypto
       /options?[^.;]{0,40}(ETF|trust)[^.]{0,30}(holding|that hold)[^.;]{0,20}(crypto|bitcoin|digital asset)/i,
       /tokenized securities|tokeniz(ation|ed form)/i,
-      /generic listing (standards|criteria)|continued listing (standards|requirements)/i,
+      /generic listing (standards?|criteria)|continued listing (standards?|requirements?)/i,
       /\bevent contracts?\b/i,
       // index options expiring on additional days (keep scoped to options/expirations)
       /(options|expir\w*)[^.;]{0,80}(Monday|Tuesday|Wednesday|Thursday|Friday|daily|end-of-month)/i,

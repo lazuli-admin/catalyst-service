@@ -25,6 +25,8 @@ describe("topic near-misses", () => {
       "Undersea Fiber Optic Cable Licenses",
       "Subsea Telecommunications Cable Security",
       "Review of Submarine Cable Landing License Rules and Procedures",
+      "Cable Landing License Applications Accepted for Filing",
+      "Protecting Submarine Cables From Foreign Adversary Threats",
     ];
     for (const title of keeps) {
       expect(isRelevant(doc(title)), title).toBe(true);
@@ -32,6 +34,8 @@ describe("topic near-misses", () => {
     }
     expect(isRelevant(doc("Cable Television Rate Regulation"))).toBe(false);
     const drops = [
+      "Cable Landing Station Environmental Assessment; Notice of Availability",
+      "Draft Environmental Impact Statement for a Subsea Cable Route",
       "Taking and Importing Marine Mammals; Taking Marine Mammals Incidental to Cable Landing Construction",
       "Incidental Take Authorization: Marine Mammal Harassment During Cable Landing Construction",
     ];
@@ -48,6 +52,7 @@ describe("topic near-misses", () => {
       "Clearing Requirement Determination Under Section 2(h) of the Commodity Exchange Act for Interest Rate Swaps",
       "Portfolio Margining of Uncleared Swaps",
       "Cross-Margining of Futures and Swaps",
+      "Margin Requirements for Uncleared Cross-Currency Swaps",
     ];
     for (const title of keeps) {
       expect(isRelevant(doc(title)), title).toBe(true);
@@ -58,6 +63,8 @@ describe("topic near-misses", () => {
       "ICE Trade Vault, LLC: Notice of Application for Registration as a Swap Data Repository",
       "Example Funds Trust, et al.; Notice of Application to Permit Funds To Enter Into Swaps With Affiliated Funds",
       "Federal Reserve Currency Swap Lines With Foreign Central Banks",
+      "Central Bank Currency Swap Lines Report",
+      "Foreign Currency Swaps Notice of Agreement",
     ];
     for (const title of drops) {
       expect(isRelevant(doc(title)), title).toBe(false);
@@ -92,6 +99,8 @@ describe("topic near-misses", () => {
       `${pre} To Adopt Generic Listing Standards for Commodity-Based Trust Shares`,
       `${pre} To Permit Trading of Securities in Tokenized Form`,
       `${pre} To Amend Continued Listing Standards`,
+      `${pre} To Amend the Continued Listing Standard for Closed-End Funds`,
+      `${pre} To Amend the Continued Listing Requirement for Minimum Bid Price`,
       `${pre} To List Event Contracts`,
       `${pre} To Increase Position and Exercise Limits for Options on a Bitcoin ETF`,
       `${pre} To Permit Index Options That Expire on Monday and Wednesday`,
