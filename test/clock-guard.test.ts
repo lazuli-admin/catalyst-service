@@ -34,6 +34,8 @@ const ALLOWLIST = [
   "src/catalysts/federal-register.ts:51",
   "src/catalysts/federal-register.ts:77",
   "src/catalysts/federal-register.ts:119",
+  "src/catalysts/fr-classify.ts:51",
+  "src/catalysts/fr-classify.ts:55",
   "src/catalysts/calendars.ts:54",
   "src/catalysts/page.ts:13",
   "src/catalysts/page.ts:20",
