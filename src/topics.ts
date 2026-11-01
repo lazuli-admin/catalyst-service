@@ -14,9 +14,17 @@ export const TOPICS: Topic[] = [
   {
     id: "semis-export-controls",
     label: "Semiconductor export controls",
-    patterns: [/semiconductor|integrated circuit|advanced comput|supercomput|foundry|\bchips?\b|entity list|\bIC designer|AI chip/i],
+    patterns: [/semiconductor|integrated circuit|advanced comput|supercomput|foundry|\bchips?\b|entity list|\bIC designer|AI chip|end-user controls|affiliates of (certain )?listed entities|affiliates rule/i],
     themes: ["semiconductor export controls"],
     affectedTickers: ["NVDA", "AMD", "AMAT", "LRCX", "KLAC", "ASML", "TSM", "MU"],
+  },
+  {
+    id: "carbon-border-eu-trade",
+    label: "Carbon border (CBAM) / EU trade",
+    patterns: [/carbon border|\bCBAM\b|european union.{0,60}trade|EU trade/i],
+    themes: ["carbon border / EU trade"],
+    // tickers are hand-curated, illustrative (steel, aluminum, cement, fertilizer)
+    affectedTickers: ["NUE", "STLD", "CLF", "AA", "CENX", "VMC", "MLM", "CF", "MOS"],
   },
   {
     id: "critical-minerals",

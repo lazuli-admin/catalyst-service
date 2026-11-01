@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ELECTIONS, FR_AGENCIES, syncElections, syncFederalRegister } from "../src/catalysts/federal-register.js";
+import { ELECTIONS, FR_AGENCIES, getLastFrSyncReport, syncElections, syncFederalRegister } from "../src/catalysts/federal-register.js";
 import { isRelevant } from "../src/topics.js";
 import type { Catalyst } from "../src/types.js";
 
@@ -9,6 +9,7 @@ const FTC = "federal-trade-commission";
 
 const store = () => ({
   upsertCatalyst: vi.fn(async (c: unknown) => ({ ...(c as object) } as Catalyst)),
+  listStaleCatalysts: vi.fn(async (..._a: unknown[]): Promise<{ dedupeKey: string; title: string }[]> => []),
   purgeStaleCatalysts: vi.fn(async (_kind: string, _from: string, _before: string, _keyPrefix: string) => 0),
 });
 const opts = { today: "2026-11-01", horizonDays: 14 };
@@ -186,6 +187,38 @@ describe("syncFederalRegister", () => {
     expect([kind, from, keyPrefix]).toEqual(["rule_effective", opts.today, "fr:"]);
     expect(before >= started && before <= new Date().toISOString()).toBe(true);
     expect(s.purgeStaleCatalysts.mock.calls[1]).toEqual(["regulatory_decision", opts.today, expect.any(String), "fr:"]);
+  });
+
+  it("reports stale rows it purges: fetched doc with no topic match -> 'no topic match'", async () => {
+    const fetchImpl = mockFetch({
+      [BIS]: {
+        results: [
+          { title: "Rules of Practice for Hearings", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "2099-00001" },
+        ],
+      },
+    });
+    const logs: string[] = [];
+    const s = store();
+    s.listStaleCatalysts.mockImplementation(async (kind: unknown) =>
+      kind === "rule_effective" ? [{ dedupeKey: "fr:2099-00001:2026-12-01", title: "Old rule" }] : [],
+    );
+    await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch, log: (m) => logs.push(m) });
+    const report = getLastFrSyncReport();
+    expect(report).not.toBeNull();
+    expect(report!.drops).toEqual([{ dedupeKey: "fr:2099-00001:2026-12-01", title: "Old rule", reason: "no topic match" }]);
+    expect(report!.count).toBe(1); // count is now drops.length
+    expect(logs).toContainEqual("federal register drop fr:2099-00001:2026-12-01 (no topic match): Old rule");
+  });
+
+  it("reports stale rows it purges: doc absent from the fetch -> 'source missing'", async () => {
+    const s = store();
+    s.listStaleCatalysts.mockImplementation(async (kind: unknown) =>
+      kind === "regulatory_decision" ? [{ dedupeKey: "fr:2099-00002:comments:2026-12-02", title: "Gone rule" }] : [],
+    );
+    await syncFederalRegister(s, { ...opts, fetch: mockFetch({}) as unknown as typeof fetch });
+    expect(getLastFrSyncReport()!.drops).toEqual([
+      { dedupeKey: "fr:2099-00002:comments:2026-12-02", title: "Gone rule", reason: "source missing" },
+    ]);
   });
 });
 

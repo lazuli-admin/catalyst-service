@@ -923,6 +923,14 @@ export class Store {
     );
   }
 
+  /** Rows the purge would delete, for drop reporting before they are removed. */
+  async listStaleCatalysts(kind: string, from: string, before: string, keyPrefix: string): Promise<{ dedupeKey: string; title: string }[]> {
+    return (await this.all(
+      "SELECT dedupe_key AS dedupeKey, title FROM catalysts WHERE kind = ? AND date_start >= ? AND updated_at < ? AND dedupe_key LIKE ?",
+      [kind, from, before, keyPrefix + "%"],
+    )) as unknown as { dedupeKey: string; title: string }[];
+  }
+
   /** Delete catalysts of a kind whose updated_at predates the given run; returns rows affected. */
   async purgeStaleCatalysts(kind: string, from: string, before: string, keyPrefix: string): Promise<number> {
     return await this.run(

@@ -18,6 +18,7 @@ const store = () => ({
   upsertCatalyst: vi.fn(async (c: unknown) => ({ ...(c as object) } as Catalyst)),
   purgeLegacyMacro: vi.fn(async () => {}),
   purgeStaleCatalysts: vi.fn(async () => 0),
+  listStaleCatalysts: vi.fn(async () => []),
 });
 
 const opts = { from: "2026-02-12", days: 5, watchlist: ["smol"], minMarketCap: 50e9 };
