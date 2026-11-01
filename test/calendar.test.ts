@@ -136,7 +136,7 @@ describe("renderCalendarPage", () => {
       cats: [
         full(cat({ dateStart: inWeek(6), dateEnd: inWeek(6), dedupeKey: "earn" })),
         full(cat({ ticker: null, kind: "macro", title: "US CPI release", dateStart: inWeek(6), dateEnd: inWeek(6), sourceUrl: null, dedupeKey: "cpi" })),
-        full(cat({ ticker: null, kind: "election", title: "Senate race", dateStart: inWeek(6), dateEnd: inWeek(6), sourceUrl: null, dedupeKey: "elec" })),
+        full(cat({ ticker: null, kind: "election", title: "US midterm elections", dateStart: inWeek(6), dateEnd: inWeek(6), sourceUrl: null, dedupeKey: "elec" })),
         full(cat({ ticker: "EVIL&<>", title: `Tick "</b>`, kind: "regulatory_decision", dateStart: inWeek(6), dateEnd: inWeek(6), sourceUrl: null, dedupeKey: "evil" })),
       ],
       asOf: today,
@@ -172,21 +172,21 @@ describe("renderCalendarPage", () => {
     const cats = [
       full(cat({ dateStart: inWeek(6), dateEnd: inWeek(6), dedupeKey: "he1" })),
       full(cat({ ticker: null, kind: "macro", title: "US CPI release", dateStart: inWeek(6), dateEnd: inWeek(6), sourceUrl: null, dedupeKey: "hm1" })),
-      full(cat({ ticker: null, kind: "election", title: "Senate race", dateStart: inWeek(6), dateEnd: inWeek(6), sourceUrl: null, dedupeKey: "hg1" })),
+      full(cat({ ticker: null, kind: "election", title: "US midterm elections", dateStart: inWeek(6), dateEnd: inWeek(6), sourceUrl: null, dedupeKey: "hg1" })),
     ];
     const grid = (html: string) => html.slice(html.indexOf('class="week"'));
     const base = grid(renderCalendarPage({ cats, asOf: today, all: false }));
     expect(base).toContain("NVDA");
     expect(base).toContain("US CPI release");
-    expect(base).toContain("Senate race");
+    expect(base).toContain("US midterm elections");
     const noEarnings = grid(renderCalendarPage({ cats, asOf: today, all: false, hide: "earnings" }));
     expect(noEarnings).not.toContain("NVDA");
     expect(noEarnings).toContain("US CPI release");
-    expect(noEarnings).toContain("Senate race");
+    expect(noEarnings).toContain("US midterm elections");
     const noMacroGlobal = grid(renderCalendarPage({ cats, asOf: today, all: false, hide: "macro,global" }));
     expect(noMacroGlobal).toContain("NVDA");
     expect(noMacroGlobal).not.toContain("US CPI release");
-    expect(noMacroGlobal).not.toContain("Senate race");
+    expect(noMacroGlobal).not.toContain("US midterm elections");
   });
 
   it("ignores invalid hide values", () => {

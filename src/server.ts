@@ -159,7 +159,10 @@ export function buildServer(store: Store, deps: PipelineDeps, opts: { lock?: Syn
   app.post("/sources/:id/run", async (req, reply) => {
     const source = await store.getSource(IdParam.parse(req.params).id);
     if (!source) return reply.status(404).send(notFound);
-    if (lock.isRunning("source-poll")) return reply.status(409).send({ error: "source_poll_running" });
+    if (lock.isRunning("source-poll")) {
+      lock.recordSkip("source-poll");
+      return reply.status(409).send({ error: "source_poll_running" });
+    }
     const result = await lock.run("source-poll", () => runSource(deps, source));
     return result === undefined ? reply.status(409).send({ error: "source_poll_running" }) : result;
   });

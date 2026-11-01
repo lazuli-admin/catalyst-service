@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { catalystDensity } from "../src/catalysts/density.js";
 import { rankCatalysts } from "../src/catalysts/ranked.js";
-import { classifyEvent, macroSeries, scoreEvent, scoreParts, type EventClass } from "../src/scoring/importance.js";
+import { IMPORTANCE, classifyEvent, macroSeries, scoreEvent, scoreParts, type EventClass } from "../src/scoring/importance.js";
 import type { Catalyst } from "../src/types.js";
 
 const TODAY = "2026-03-01";
@@ -139,9 +139,9 @@ describe("order sanity", () => {
     expect(scores.get("fr-d")!).toBeGreaterThan(scores.get("fr-c")!);
   });
 
-  it("rankCatalysts default view returns ids in that same order (FR comment close gated out at 1.8 < 2.0)", () => {
+  it("rankCatalysts default view returns ids in that same order (FR comment close gated out at 1.8 < 4.0)", () => {
     // GDP (5.4) ties the policy decision; kindRank puts macro first.
-    expect(rankCatalysts(rows, { asOf: TODAY, watchlist: [] }).map((r) => r.id)).toEqual(["fomc", "cpi", "gdp", "fr-d", "ppi"]);
+    expect(rankCatalysts(rows, { asOf: TODAY, watchlist: [] }).map((r) => r.id)).toEqual(["fomc", "cpi", "gdp", "fr-d"]);
     expect(rankCatalysts(rows, { asOf: TODAY, watchlist: [], all: true }).map((r) => r.id)).toEqual(["fomc", "cpi", "gdp", "fr-d", "ppi", "fr-c"]);
   });
 });
@@ -168,15 +168,48 @@ describe("ranking == clustering", () => {
 });
 
 describe("default view gating", () => {
-  it("GDP and PPI rows (exact, confidence 0.9, future, scheduled) both appear in the default view", () => {
+  it("GDP (0.9 conf) and PPI (1.0 conf, exactly 4.0) rows (exact, future, scheduled) both appear in the default view: cutoff is inclusive", () => {
     const rows = rankCatalysts(
       [
         cat({ id: "gdp", ticker: null, kind: "macro", dedupeKey: "bea:GDP:2026-03-20", title: "Gross domestic product", confidence: 0.9 }),
-        cat({ id: "ppi", ticker: null, kind: "macro", dedupeKey: "bls:PPI:2026-03-20", title: "Producer price index", confidence: 0.9 }),
+        cat({ id: "ppi", ticker: null, kind: "macro", dedupeKey: "bls:PPI:2026-03-20", title: "Producer price index", confidence: 1 }),
       ],
       { asOf: TODAY, watchlist: [] },
     );
-    expect(rows.map((r) => r.id)).toEqual(["gdp", "ppi"]);
+    expect(rows.map((r) => r.id)).toEqual(["gdp", "ppi"]); // ppi exactly 4.0 stays (inclusive); 5.4 > 4.0
+  });
+
+  it("no marketCap tiers or importanceOverride remain in the scorer source", () => {
+    const src = readFileSync("src/scoring/importance.ts", "utf8");
+    expect(src).not.toContain("importanceOverride");
+    expect(src).not.toContain("earnings_small");
+  });
+
+  it("reclassified weights: jobless claims 2, policy update due 1, megacap earnings 7", () => {
+    expect(IMPORTANCE.jobless_claims).toBe(2);
+    expect(IMPORTANCE.policy_update_due).toBe(1);
+    expect(IMPORTANCE.earnings_mega).toBe(7);
+    const jobless = cat({ id: "j", ticker: null, kind: "macro", dedupeKey: "dol:other:2026-03-20", title: "Initial jobless claims" });
+    const updateDue = cat({ id: "u", ticker: null, kind: "rule_effective", dedupeKey: "policy:232", title: "Section 232 wind update due" });
+    const mega = cat({ id: "m", title: "Nvidia earnings (Q1)", themes: ["megacap"] });
+    expect(classifyEvent(jobless)).toBe("jobless_claims");
+    expect(classifyEvent(updateDue)).toBe("policy_update_due");
+    expect(classifyEvent(mega)).toBe("earnings_mega");
+    expect(scoreEvent(jobless)).toBe(2);
+    expect(scoreEvent(updateDue)).toBe(1);
+    expect(scoreEvent(mega)).toBe(7);
+  });
+
+  it("non-US central bank decisions classify as central_bank_other (4); Fed stays fomc; bare rate decisions are macro_other", () => {
+    for (const title of ["ECB rate decision", "Bank of Japan policy rate decision", "BoE interest rate decision"]) {
+      const c = cat({ ticker: null, kind: "macro", dedupeKey: "x", title });
+      expect(classifyEvent(c)).toBe("central_bank_other");
+      expect(scoreEvent(c)).toBe(4);
+    }
+    for (const title of ["Fed interest rate decision", "FOMC rate decision"]) {
+      expect(classifyEvent(cat({ ticker: null, kind: "macro", dedupeKey: "x", title }))).toBe("fomc");
+    }
+    expect(classifyEvent(cat({ ticker: null, kind: "macro", dedupeKey: "x", title: "Rate decision" }))).toBe("macro_other");
   });
 
   it("src/catalysts/ranked.ts no longer contains pin-list machinery", () => {
