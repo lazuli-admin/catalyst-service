@@ -171,3 +171,36 @@ describe("rankCatalysts", () => {
     expect(a.score).toBeCloseTo(base * 3); // clamped high
   });
 });
+
+describe("policy pinning", () => {
+  it("pins policy catalysts with impactWeight >= 3, scores them 3 x certainty x confidence, then x2; weight 2 stays unpinned", () => {
+    const pinned = cat({ id: "p", ticker: null, kind: "regulatory_decision", dedupeKey: "policy:foo", impactWeight: 3 });
+    const minor = cat({ id: "m", ticker: null, kind: "regulatory_decision", dedupeKey: "policy:bar", impactWeight: 2 });
+    const rows = rankCatalysts([pinned, minor], { asOf: TODAY, watchlist: [] });
+    const [top, low] = rows;
+    expect(top!.id).toBe("p");
+    expect(top!.pinned).toBe(true);
+    expect(top!.score).toBeCloseTo(3 * 1 * 1 * 2);
+    expect(low!.id).toBe("m");
+    expect(low!.pinned).toBeUndefined();
+    expect(low!.score).toBeCloseTo(2 * 1 * 1);
+  });
+
+  it("non-macro base weight prefers impactWeight over KIND_WEIGHTS; macro still uses the kind table", () => {
+    const earnings = cat({ id: "e", kind: "earnings", impactWeight: 2, dateStart: "2026-03-20", dateEnd: "2026-03-20" });
+    const macro = cat({ id: "x", ticker: null, kind: "macro", title: "US CPI: consumer price index · 8:30 ET", impactWeight: 3, dateStart: "2026-03-20", dateEnd: "2026-03-20" });
+    const rows = rankCatalysts([earnings, macro], { asOf: TODAY, watchlist: [] });
+    expect(rows[0]!.id).toBe("x"); // pinned macro (weight 3, x2) outranks weight-2 earnings
+    expect(rows[0]!.score).toBeCloseTo(3 * 1 * 1 * 2);
+    expect(rows[1]!.score).toBeCloseTo(2 * 1 * 1);
+  });
+
+  it("non-precise policy events still land in the default view when pinned", () => {
+    const rows = rankCatalysts(
+      [cat({ id: "w", ticker: null, kind: "litigation", status: "scheduled", dateStart: "2026-03-05", dateEnd: "2026-04-30", datePrecision: "window", dedupeKey: "policy:trial", impactWeight: 3 })],
+      { asOf: TODAY, watchlist: [] },
+    );
+    expect(rows.map((r) => r.id)).toEqual(["w"]);
+    expect(rows[0]!.pinned).toBe(true);
+  });
+});

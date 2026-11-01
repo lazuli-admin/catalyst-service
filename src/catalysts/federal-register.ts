@@ -14,7 +14,19 @@ export const FR_AGENCIES: Record<string, { label: string; themes: string[]; affe
   "trade-representative-office-of-united-states": { label: "USTR", themes: ["tariffs"], affectedTickers: [] },
   "federal-trade-commission": { label: "FTC", themes: ["antitrust"], affectedTickers: [] },
   "federal-communications-commission": { label: "FCC", themes: ["telecom"], affectedTickers: [] },
+  "international-trade-administration": { label: "ITA", themes: ["trade remedies"], affectedTickers: [] },
+  "u-s-customs-and-border-protection": { label: "CBP", themes: ["customs"], affectedTickers: [] },
+  "securities-and-exchange-commission": { label: "SEC", themes: ["securities rules"], affectedTickers: [] },
 };
+
+/** USTR/ITA/CBP rules outside these trade topics are noise. */
+export const TRADE_RE = /tariff|dut(y|ies)|section 301|section 232|section 122|ieepa|reciprocal|exclusion|suspension|de minimis|low-value|semiconductor|critical mineral|rare earth|steel|aluminum|copper|lumber|automobile|auto parts|pharmaceutical|china|prc|export control|entity list|sanction|robotics|wind turbine|polysilicon|solar/i;
+
+/** Routine ITA antidumping paperwork unless it's a Section 232 action. */
+export const ITA_DROP_RE = /administrative review|sunset review|new shipper|scope ruling|rescission|preliminary results|final results/i;
+
+/** SEC housekeeping/noise titles (exact leading phrases). */
+export const SEC_DROP_PREFIXES = ["Self-Regulatory Organizations", "Submission for OMB Review", "Sunshine Act"];
 
 /** FCC rules outside these topics (e.g. radio license transfers) are noise. */
 export const FCC_TITLE_RE = /spectrum|broadband|net neutrality|satellite|merger/i;
@@ -70,14 +82,17 @@ export async function syncFederalRegister(
   let allAgenciesOk = true;
   const end = horizonEnd(opts.today, opts.horizonDays);
   const gte = new Date(Date.parse(`${opts.today}T00:00:00Z`) - 400 * 86_400_000).toISOString().slice(0, 10);
-  const fields = ["title", "effective_on", "publication_date", "html_url", "abstract", "document_number"]
+  const fields = ["title", "effective_on", "publication_date", "html_url", "abstract", "document_number", "comments_close_on"]
     .map((f) => `fields[]=${f}`)
     .join("&");
   for (const [slug, agency] of Object.entries(FR_AGENCIES)) {
     try {
+      // RULE/PRORULE for everyone; trade agencies also surface proposed-notice documents (NOTICE).
+      const typeParams = ["RULE", "PRORULE", ...(agency.label === "USTR" || agency.label === "ITA" || agency.label === "CBP" ? ["NOTICE"] : [])]
+        .map((t) => `conditions[type][]=${t}`).join("&");
       const url =
         `https://www.federalregister.gov/api/v1/documents.json?conditions[agencies][]=${encodeURIComponent(slug)}` +
-        `&conditions[type][]=RULE&conditions[publication_date][gte]=${gte}&per_page=100&order=newest&${fields}`;
+        `&${typeParams}&conditions[publication_date][gte]=${gte}&per_page=100&order=newest&${fields}`;
       const body = (await fetchJson(url, fetchImpl)) as { results?: unknown[] };
       for (const row of (body.results ?? []) as Record<string, unknown>[]) {
         const title = typeof row.title === "string" ? row.title : null;
@@ -87,6 +102,11 @@ export async function syncFederalRegister(
         if (!title || !documentNumber) continue;
         if (agency.label === "FCC" && !FCC_TITLE_RE.test(title)) continue;
         if (agency.label === "BIS" && !SEMI_TOPIC_RE.test(`${title} ${abstract}`)) continue;
+        if (agency.label === "USTR" || agency.label === "ITA" || agency.label === "CBP") {
+          if (!TRADE_RE.test(`${title} ${abstract}`)) continue;
+          if (agency.label === "ITA" && ITA_DROP_RE.test(title) && !/section 232/i.test(title)) continue;
+        }
+        if (agency.label === "SEC" && SEC_DROP_PREFIXES.some((p) => title.startsWith(p))) continue;
         // Effective-date candidates keep the plain title; abstract end dates shift to the NEXT day (rule back in force).
         const inWindow = (d: string) => d >= opts.today && d <= end;
         const candidates: { date: string; isEnd: boolean }[] = [];
@@ -122,6 +142,25 @@ export async function syncFederalRegister(
             dedupeKey: `fr:${documentNumber}:${date}`,
           });
         }
+        const commentsOn = typeof row.comments_close_on === "string" && /^\d{4}-\d{2}-\d{2}$/.test(row.comments_close_on) ? row.comments_close_on : null;
+        if (commentsOn && inWindow(commentsOn)) {
+          await store.upsertCatalyst({
+            ticker: null,
+            title: `${agency.label} comments close: ${title}`,
+            kind: "regulatory_decision",
+            status: "scheduled",
+            dateStart: commentsOn,
+            dateEnd: commentsOn,
+            datePrecision: "exact",
+            confidence: 0.9,
+            themes: agency.themes,
+            affectedTickers: agency.affectedTickers,
+            sourceTier: 1,
+            sourceUrl: htmlUrl,
+            observationId: null,
+            dedupeKey: `fr:${documentNumber}:comments:${commentsOn}`,
+          });
+        }
       }
     } catch (err) {
       allAgenciesOk = false;
@@ -129,7 +168,10 @@ export async function syncFederalRegister(
     }
   }
   // Only delete rows the current code would have refreshed; a partial run must not wipe fresh-looking old rows.
-  if (allAgenciesOk) await store.purgeStaleCatalysts("rule_effective", opts.today, runStart, "fr:");
+  if (allAgenciesOk) {
+    await store.purgeStaleCatalysts("rule_effective", opts.today, runStart, "fr:");
+    await store.purgeStaleCatalysts("regulatory_decision", opts.today, runStart, "fr:");
+  }
 }
 
 export async function syncElections(

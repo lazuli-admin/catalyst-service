@@ -147,14 +147,15 @@ describe("syncFederalRegister", () => {
     expect(s.purgeStaleCatalysts).not.toHaveBeenCalled();
   });
 
-  it("purges stale rule rows once all agencies succeed", async () => {
+  it("purges stale rule + comment rows once all agencies succeed", async () => {
     const s = store();
     const started = new Date().toISOString();
     await syncFederalRegister(s, { ...opts, fetch: mockFetch({}) as unknown as typeof fetch });
-    expect(s.purgeStaleCatalysts).toHaveBeenCalledTimes(1);
+    expect(s.purgeStaleCatalysts).toHaveBeenCalledTimes(2);
     const [kind, from, before, keyPrefix] = s.purgeStaleCatalysts.mock.calls[0]!;
     expect([kind, from, keyPrefix]).toEqual(["rule_effective", opts.today, "fr:"]);
     expect(before >= started && before <= new Date().toISOString()).toBe(true);
+    expect(s.purgeStaleCatalysts.mock.calls[1]).toEqual(["regulatory_decision", opts.today, expect.any(String), "fr:"]);
   });
 });
 
@@ -187,12 +188,115 @@ describe("syncElections", () => {
 });
 
 describe("FR_AGENCIES", () => {
-  it("covers the four agency slugs", () => {
+  it("covers the seven agency slugs", () => {
     expect(Object.keys(FR_AGENCIES)).toEqual([
       "industry-and-security-bureau",
       "trade-representative-office-of-united-states",
       "federal-trade-commission",
       "federal-communications-commission",
+      "international-trade-administration",
+      "u-s-customs-and-border-protection",
+      "securities-and-exchange-commission",
     ]);
+  });
+});
+
+describe("trade agencies (USTR/ITA/CBP)", () => {
+  it("keeps only trade-topic RULE/PRORULE/NOTICE docs; queries NOTICE type", async () => {
+    const fetchImpl = mockFetch({
+      "trade-representative-office-of-united-states": {
+        results: [
+          { title: "Request for Comments on Further Suspension of Section 301 Action", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "ustr-1" },
+          { title: "Federal Advisory Committee Meeting", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "ustr-2" },
+        ],
+      },
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
+    expect(catalysts(s).map((r) => r.title)).toEqual(["Request for Comments on Further Suspension of Section 301 Action"]);
+    const url = String(fetchImpl.mock.calls.find(([u]) => String(u).includes("trade-representative"))![0]);
+    expect(url).toContain("conditions[type][]=RULE");
+    expect(url).toContain("conditions[type][]=PRORULE");
+    expect(url).toContain("conditions[type][]=NOTICE");
+  });
+
+  it("uses title+abstract for the trade filter", async () => {
+    const fetchImpl = mockFetch({
+      "u-s-customs-and-border-protection": {
+        results: [
+          { title: "Quarterly IRS Listing", effective_on: "2026-11-05", html_url: "u", abstract: "irrelevant", document_number: "cbp-1" },
+          { title: "Extension of Import Restrictions Imposing Duties", effective_on: "2026-11-05", html_url: "u", abstract: "cultural antiquities", document_number: "cbp-2" },
+        ],
+      },
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
+    expect(catalysts(s).map((r) => r.title)).toEqual(["Extension of Import Restrictions Imposing Duties"]);
+  });
+
+  it("ITA drops routine review paperwork unless Section 232", async () => {
+    const fetchImpl = mockFetch({
+      "international-trade-administration": {
+        results: [
+          { title: "Initiation of Antidumping Administrative Review", effective_on: "2026-11-05", html_url: "u", abstract: "certain steel", document_number: "ita-1" },
+          { title: "Section 232 Preliminary Results on Aluminum", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "ita-2" },
+        ],
+      },
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
+    expect(catalysts(s).map((r) => r.title)).toEqual(["Section 232 Preliminary Results on Aluminum"]);
+  });
+});
+
+describe("SEC", () => {
+  it("keeps RULE/PRORULE, drops housekeeping titles, does not query NOTICE", async () => {
+    const fetchImpl = mockFetch({
+      "securities-and-exchange-commission": {
+        results: [
+          { title: "Amendments to Regulation SBSR", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "sec-1" },
+          { title: "Self-Regulatory Organizations; NYSE; Order Approving", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "sec-2" },
+          { title: "Sunshine Act Meeting Notice", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "sec-3" },
+        ],
+      },
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
+    expect(catalysts(s).map((r) => r.title)).toEqual(["Amendments to Regulation SBSR"]);
+    const url = String(fetchImpl.mock.calls.find(([u]) => String(u).includes("securities-and-exchange"))![0]);
+    expect(url).not.toContain("NOTICE");
+  });
+});
+
+describe("comments_close_on", () => {
+  it("upserts an extra comments-close event in the window", async () => {
+    const fetchImpl = mockFetch({
+      "trade-representative-office-of-united-states": {
+        results: [
+          { title: "Section 301 Tariff Action on China", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "ustr-9", comments_close_on: "2026-11-12" },
+        ],
+      },
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
+    const rows = catalysts(s);
+    expect(rows.map((r) => [r.kind, r.title, r.dedupeKey])).toEqual([
+      ["rule_effective", "Section 301 Tariff Action on China", "fr:ustr-9:2026-11-05"],
+      ["regulatory_decision", "USTR comments close: Section 301 Tariff Action on China", "fr:ustr-9:comments:2026-11-12"],
+    ]);
+  });
+
+  it("ignores comments_close_on outside the window or malformed", async () => {
+    const fetchImpl = mockFetch({
+      "trade-representative-office-of-united-states": {
+        results: [
+          { title: "Section 301 Tariff Action", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "ustr-10", comments_close_on: "2026-12-31" },
+          { title: "Section 232 Steel Action", effective_on: "2026-11-06", html_url: "u", abstract: "", document_number: "ustr-11", comments_close_on: "soon" },
+        ],
+      },
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
+    expect(catalysts(s).every((r) => r.kind === "rule_effective")).toBe(true);
   });
 });

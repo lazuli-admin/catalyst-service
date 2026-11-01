@@ -930,6 +930,18 @@ export class Store {
     );
   }
 
+  /** Delete rows whose dedupe_key starts with prefix, except the given exact dedupe keys. */
+  async purgeByKeyPrefixExcept(prefix: string, keepKeys: string[]): Promise<void> {
+    if (keepKeys.length === 0) {
+      await this.run("DELETE FROM catalysts WHERE dedupe_key LIKE ?", [prefix + "%"]);
+      return;
+    }
+    await this.run(
+      `DELETE FROM catalysts WHERE dedupe_key LIKE ? AND dedupe_key NOT IN (${keepKeys.map(() => "?").join(",")})`,
+      [prefix + "%", ...keepKeys],
+    );
+  }
+
   /** Insert or update by dedupeKey; id and createdAt are kept on conflict. */
   async upsertCatalyst(c: CatalystInput): Promise<Catalyst> {
     const updatedAt = nowIso();

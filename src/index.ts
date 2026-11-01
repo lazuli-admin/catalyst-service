@@ -69,8 +69,9 @@ async function main(): Promise<void> {
   const watchlist = (process.env.CATALYST_WATCHLIST?.trim() || DEFAULT_WATCHLIST.join(",")).split(",").map((s) => s.trim()).filter(Boolean);
   const minMarketCap = Number(process.env.CATALYST_MIN_MARKET_CAP ?? 50e9);
   const calendarHorizonDays = Number(process.env.CALENDAR_HORIZON_DAYS ?? 45);
+  const policyHorizonDays = Number(process.env.POLICY_HORIZON_DAYS ?? 180);
   const syncCalendarsNow = () => {
-    void syncCalendars(store, { from: new Date().toISOString().slice(0, 10), days: calendarHorizonDays, watchlist, minMarketCap, log: (m) => deps.log?.(`[calendars] ${m}`) });
+    void syncCalendars(store, { from: new Date().toISOString().slice(0, 10), days: calendarHorizonDays, policyHorizonDays, watchlist, minMarketCap, log: (m) => deps.log?.(`[calendars] ${m}`) });
   };
   if (process.env.NODE_ENV !== "test") {
     syncCalendarsNow();
