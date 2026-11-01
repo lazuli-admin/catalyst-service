@@ -5,6 +5,8 @@ import { isNoise, isRelevant, NOISE_PATTERNS, topicTags } from "../topics.js";
 import { classify, type FrApiDoc } from "./fr-classify.js";
 
 const TIMEOUT_MS = 15_000;
+const FR_REQUEST_DELAY_MS = 250;
+const MAX_FR_PAGES = 20;
 
 /** slug -> agency label (used in catalyst titles). Relevance is decided by TOPIC, never agency; tickers are hand-curated, illustrative, reviewed manually (see src/topics.ts). */
 export const FR_AGENCIES: Record<string, { label: string }> = {
@@ -17,8 +19,8 @@ export const FR_AGENCIES: Record<string, { label: string }> = {
   "securities-and-exchange-commission": { label: "SEC" },
 };
 
-/** Agencies whose sync query also includes NOTICE documents (used by recall gate too). */
-export const NOTICE_AGENCY_LABELS = ["USTR", "ITA", "CBP"];
+/** Every agency now queries NOTICE too; kept for the recall gate. */
+export const NOTICE_AGENCY_LABELS = Object.values(FR_AGENCIES).map((a) => a.label);
 
 /** Fixed-date political events. */
 export const ELECTIONS: { date: string; title: string }[] = [
@@ -32,102 +34,158 @@ function horizonEnd(today: string, horizonDays: number): string {
 }
 
 export type FrDrop = { dedupeKey: string; title: string; reason: string };
-export type FrSyncReport = { at: string; count: number; drops: FrDrop[] };
+export type FrQueryReport = { name: string; pages: number; totalPages: number | null; docs: number; ok: boolean; error?: string };
+export type FrSyncReport = { at: string; complete: boolean; count: number; drops: FrDrop[]; queries: FrQueryReport[] };
 let lastFrSyncReport: FrSyncReport | null = null;
 export function getLastFrSyncReport(): FrSyncReport | null {
   return lastFrSyncReport;
 }
 
-async function fetchJson(url: string, fetchImpl: typeof fetch): Promise<unknown> {
-  const res = await fetchImpl(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
-  if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
-  return res.json();
-}
+const FR_KINDS = ["rule_effective", "comment_close", "presidential_action", "regulatory_decision"] as const;
 
 export async function syncFederalRegister(
   store: Pick<Store, "upsertCatalyst" | "purgeStaleCatalysts" | "listStaleCatalysts">,
-  opts: { today: string; horizonDays: number; fetch?: typeof fetch; log?: (m: string) => void },
+  opts: { today: string; horizonDays: number; fetch?: typeof fetch; log?: (m: string) => void; sleep?: (ms: number) => Promise<void> },
 ): Promise<void> {
   const fetchImpl = opts.fetch ?? fetch;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const log = opts.log ?? (() => {});
   const runStart = new Date().toISOString();
-  let allAgenciesOk = true;
   const dropReasons = new Map<string, string>();
   const end = horizonEnd(opts.today, opts.horizonDays);
   const gte = new Date(Date.parse(`${opts.today}T00:00:00Z`) - 400 * 86_400_000).toISOString().slice(0, 10); // clock-guard: pure-date
-  const fields = ["title", "effective_on", "publication_date", "html_url", "abstract", "document_number", "comments_close_on", "type", "dates"]
+  const fields = [
+    "title",
+    "effective_on",
+    "publication_date",
+    "html_url",
+    "abstract",
+    "document_number",
+    "comments_close_on",
+    "type",
+    "subtype",
+    "raw_text_url",
+    "dates",
+  ]
     .map((f) => `fields[]=${f}`)
     .join("&");
-  for (const [slug, agency] of Object.entries(FR_AGENCIES)) {
+
+  // Every agency queries RULE/PRORULE/NOTICE; one extra query covers all presidential documents.
+  const targets: { name: string; slug: string | null; conditions: string; presidential: boolean }[] = [
+    ...Object.entries(FR_AGENCIES).map(([slug, agency]) => ({
+      name: agency.label,
+      slug,
+      conditions: `conditions[agencies][]=${encodeURIComponent(slug)}&${["RULE", "PRORULE", "NOTICE"].map((t) => `conditions[type][]=${t}`).join("&")}`,
+      presidential: false,
+    })),
+    { name: "PRESDOCU", slug: null, conditions: "conditions[type][]=PRESDOCU", presidential: true },
+  ];
+
+  let firstRequest = true;
+  // Sequential requests with a polite delay between them.
+  const polite = async () => {
+    if (!firstRequest) await sleep(FR_REQUEST_DELAY_MS);
+    firstRequest = false;
+  };
+  const fetchResponse = async (url: string) => {
+    await polite();
+    const res = await fetchImpl(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res;
+  };
+  const fetchJson = async (url: string): Promise<{ results?: unknown[]; total_pages?: number }> =>
+    (await fetchResponse(url)).json() as { results?: unknown[]; total_pages?: number };
+
+  const queries: FrQueryReport[] = [];
+  for (const target of targets) {
+    const q: FrQueryReport = { name: target.name, pages: 0, totalPages: null, docs: 0, ok: true };
     try {
-      // RULE/PRORULE for everyone; trade agencies also surface proposed-notice documents (NOTICE).
-      const typeParams = ["RULE", "PRORULE", ...(NOTICE_AGENCY_LABELS.includes(agency.label) ? ["NOTICE"] : [])]
-        .map((t) => `conditions[type][]=${t}`).join("&");
-      const url =
-        `https://www.federalregister.gov/api/v1/documents.json?conditions[agencies][]=${encodeURIComponent(slug)}` +
-        `&${typeParams}&conditions[publication_date][gte]=${gte}&per_page=100&order=newest&${fields}`;
-      const body = (await fetchJson(url, fetchImpl)) as { results?: unknown[] };
-      for (const row of (body.results ?? []) as Record<string, unknown>[]) {
-        const title = typeof row.title === "string" ? row.title : null;
-        const documentNumber = typeof row.document_number === "string" ? row.document_number : null;
-        const htmlUrl = typeof row.html_url === "string" ? row.html_url : null;
-        const abstract = typeof row.abstract === "string" ? row.abstract : "";
-        if (!title || !documentNumber) continue;
-        // Relevance is decided by TOPIC, never agency; corrections are already covered by isNoise.
-        const doc: FrApiDoc = {
-          title,
-          abstract,
-          type: row.type as string,
-          document_number: documentNumber,
-          html_url: htmlUrl,
-          agencyLabel: agency.label,
-          dates: typeof row.dates === "string" ? row.dates : null,
-          effective_on: typeof row.effective_on === "string" ? row.effective_on : null,
-          comments_close_on: typeof row.comments_close_on === "string" ? row.comments_close_on : null,
-        };
-        if (isNoise(doc)) {
-          dropReasons.set(documentNumber, `noise:${NOISE_PATTERNS.find((p) => p.test(title))?.source ?? "correction"}`);
-          continue;
+      const mkUrl = (page: number) =>
+        `https://www.federalregister.gov/api/v1/documents.json?${target.conditions}&conditions[publication_date][gte]=${gte}&per_page=1000&order=oldest&page=${page}&${fields}`;
+      for (let page = 1; ; page++) {
+        const body = await fetchJson(mkUrl(page));
+        if (q.totalPages === null && typeof body.total_pages === "number") q.totalPages = body.total_pages;
+        const results = (body.results ?? []) as Record<string, unknown>[];
+        q.pages = page;
+        q.docs += results.length;
+        for (const row of results) {
+          const title = typeof row.title === "string" ? row.title : null;
+          const documentNumber = typeof row.document_number === "string" ? row.document_number : null;
+          const htmlUrl = typeof row.html_url === "string" ? row.html_url : null;
+          const abstract = typeof row.abstract === "string" ? row.abstract : "";
+          if (!title || !documentNumber) continue;
+          // Relevance is decided by TOPIC, never agency; corrections are already covered by isNoise.
+          const doc: FrApiDoc = {
+            title,
+            abstract,
+            type: row.type as string,
+            subtype: typeof row.subtype === "string" ? row.subtype : null,
+            document_number: documentNumber,
+            html_url: htmlUrl,
+            agencyLabel: target.presidential ? "President" : target.name,
+            dates: typeof row.dates === "string" ? row.dates : null,
+            effective_on: typeof row.effective_on === "string" ? row.effective_on : null,
+            comments_close_on: typeof row.comments_close_on === "string" ? row.comments_close_on : null,
+          };
+          if (isNoise(doc)) {
+            dropReasons.set(documentNumber, `noise:${NOISE_PATTERNS.find((p) => p.test(title))?.source ?? "correction"}`);
+            continue;
+          }
+          if (!isRelevant(doc)) {
+            dropReasons.set(documentNumber, "no topic match");
+            continue;
+          }
+          // Presidential "in effect" dates live in the raw text, not the API metadata.
+          if (target.presidential) {
+            const rawUrl = typeof row.raw_text_url === "string" ? row.raw_text_url : null;
+            if (!rawUrl) throw new Error("missing raw_text_url");
+            doc.bodyText = await (await fetchResponse(rawUrl)).text();
+          }
+          const events = classify(doc, { today: opts.today, end });
+          if (events.length === 0) {
+            dropReasons.set(documentNumber, "out of window");
+            continue;
+          }
+          const tags = topicTags(doc);
+          for (const ev of events) {
+            // dateSource is not persisted: the catalysts table has no column for it.
+            await store.upsertCatalyst({
+              ticker: null,
+              title: ev.title,
+              kind: ev.kind,
+              status: "scheduled",
+              dateStart: ev.date,
+              dateEnd: ev.date,
+              datePrecision: ev.datePrecision,
+              confidence: 0.9,
+              themes: tags.themes,
+              affectedTickers: tags.affectedTickers,
+              sourceTier: 1,
+              sourceUrl: ev.sourceUrl,
+              observationId: null,
+              dedupeKey: ev.dedupeKey,
+            });
+          }
         }
-        if (!isRelevant(doc)) {
-          dropReasons.set(documentNumber, "no topic match");
-          continue;
-        }
-        const events = classify(doc, { today: opts.today, end });
-        if (events.length === 0) {
-          dropReasons.set(documentNumber, "out of window");
-          continue;
-        }
-        const tags = topicTags(doc);
-        for (const ev of events) {
-          // dateSource is not persisted: the catalysts table has no column for it.
-          await store.upsertCatalyst({
-            ticker: null,
-            title: ev.title,
-            kind: ev.kind,
-            status: "scheduled",
-            dateStart: ev.date,
-            dateEnd: ev.date,
-            datePrecision: ev.datePrecision,
-            confidence: 0.9,
-            themes: tags.themes,
-            affectedTickers: tags.affectedTickers,
-            sourceTier: 1,
-            sourceUrl: ev.sourceUrl,
-            observationId: null,
-            dedupeKey: ev.dedupeKey,
-          });
+        if (results.length === 0) break; // stop early on an empty page
+        if (q.totalPages !== null && page >= q.totalPages) break;
+        if (page >= MAX_FR_PAGES) {
+          q.ok = false;
+          q.error = "page cap exceeded";
+          break;
         }
       }
     } catch (err) {
-      allAgenciesOk = false;
-      log(`federal register ${slug} failed: ${errorMessage(err)}`);
+      q.ok = false;
+      q.error = errorMessage(err).slice(0, 200);
+      log(`federal register ${target.slug ?? target.name} failed: ${q.error}`);
     }
+    queries.push(q);
   }
+
   // Only delete rows the current code would have refreshed; a partial run must not wipe fresh-looking old rows.
-  if (allAgenciesOk) {
+  if (queries.every((q) => q.ok)) {
     const drops: FrDrop[] = [];
-    const FR_KINDS = ["rule_effective", "comment_close", "presidential_action", "regulatory_decision"] as const;
     for (const kind of FR_KINDS) {
       const stale = await store.listStaleCatalysts(kind, opts.today, runStart, "fr:");
       for (const row of stale) {
@@ -137,8 +195,10 @@ export async function syncFederalRegister(
         drops.push({ dedupeKey: row.dedupeKey, title: row.title, reason });
       }
     }
-    lastFrSyncReport = { at: new Date().toISOString(), count: drops.length, drops };
+    lastFrSyncReport = { at: new Date().toISOString(), complete: true, count: drops.length, drops, queries };
     for (const kind of FR_KINDS) await store.purgeStaleCatalysts(kind, opts.today, runStart, "fr:");
+  } else {
+    lastFrSyncReport = { at: new Date().toISOString(), complete: false, count: 0, drops: [], queries };
   }
 }
 
