@@ -280,4 +280,24 @@ describe("impactWeight removal", () => {
     const offenders = files.filter((f) => readFileSync(f, "utf8").includes("impactWeight"));
     expect(offenders).toEqual([]);
   });
+
+describe("new policy kinds", () => {
+  it("presidential_action classifies as policy_decision (importance 6)", () => {
+    const c = cat({ ticker: null, kind: "presidential_action", dedupeKey: "fr:pres-1:2026-01-01", title: "Executive Order in effect" });
+    expect(classifyEvent(c)).toBe("policy_decision");
+    expect(IMPORTANCE[classifyEvent(c)]).toBe(6);
+  });
+
+  it("comment_close classifies as policy_comment_close (importance 2)", () => {
+    const c = cat({ ticker: null, kind: "comment_close", dedupeKey: "fr:cc-1:comments:2026-01-01", title: "Public comments close" });
+    expect(classifyEvent(c)).toBe("policy_comment_close");
+    expect(IMPORTANCE[classifyEvent(c)]).toBe(2);
+  });
+
+  it("RFI comment_close classifies as policy_reply_or_rfi (importance 1)", () => {
+    const c = cat({ ticker: null, kind: "comment_close", dedupeKey: "fr:rfi-1:comments:2026-01-01", title: "Request for Information on Cybersecurity Practices" });
+    expect(classifyEvent(c)).toBe("policy_reply_or_rfi");
+    expect(IMPORTANCE[classifyEvent(c)]).toBe(1);
+  });
+});
 });

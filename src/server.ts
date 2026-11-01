@@ -112,7 +112,11 @@ export function buildServer(store: Store, deps: PipelineDeps, opts: { lock?: Syn
 
   app.get("/health", async () => {
     const report = getLastFrSyncReport();
-    return { ok: true, locks: lock.stats(), frDrops: report ? { at: report.at, count: report.count, drops: report.drops.slice(0, 10) } : null };
+    return {
+      ok: true,
+      locks: lock.stats(),
+      frDrops: report ? { at: report.at, count: report.count, drops: report.drops.slice(0, 10), complete: report.complete, queries: report.queries } : null,
+    };
   });
   app.get("/source-types", async () => listAdapters());
 

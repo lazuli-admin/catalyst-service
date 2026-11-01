@@ -28,6 +28,7 @@ export type EventClass =
   | "policy_decision"
   | "policy_suspension_end"
   | "policy_comment_close"
+  | "policy_reply_or_rfi"
   | "policy_update_due"
   | "policy_other"
   | "earnings_mega"
@@ -58,6 +59,8 @@ export const IMPORTANCE: Record<EventClass, number> = {
   policy_decision: 6,
   policy_suspension_end: 6,
   policy_comment_close: 2,
+  // RFI / request-for-comments / reply-comment deadlines: informational, not decisions.
+  policy_reply_or_rfi: 1,
   policy_update_due: 1,
   policy_other: 3,
   // Earnings (by market cap tier)
@@ -104,8 +107,16 @@ export function classifyEvent(c: Catalyst, ctx: ScoreContext = {}): EventClass {
   if (c.kind === "election") {
     return /\b(us|federal|presidential|midterm|congress)/i.test(c.title) ? "election_federal" : "election_other";
   }
-  if (c.dedupeKey.startsWith("policy:") || c.dedupeKey.startsWith("fr:") || c.kind === "rule_effective") {
-    if (c.dedupeKey.includes(":comments:") || /comments? (close|due|deadline)/i.test(c.title)) return "policy_comment_close";
+  if (
+    c.dedupeKey.startsWith("policy:") || c.dedupeKey.startsWith("fr:") ||
+    c.kind === "rule_effective" || c.kind === "comment_close" || c.kind === "presidential_action"
+  ) {
+    const isCommentClose =
+      c.kind === "comment_close" || c.dedupeKey.includes(":comments:") || /comments? (close|due|deadline)/i.test(c.title);
+    // RFI/reply-comment deadlines are informational, so classify before the generic comment-close branch.
+    if (isCommentClose && /request for (information|comments?)|\bRFI\b|reply comments?/i.test(c.title)) return "policy_reply_or_rfi";
+    if (c.kind === "presidential_action") return "policy_decision";
+    if (isCommentClose) return "policy_comment_close";
     if (/update due/i.test(c.title)) return "policy_update_due";
     if (/suspension (ends|end|expires)|exclusions? end|\bends\b/i.test(c.title)) return "policy_suspension_end";
     if (c.kind === "rule_effective" || c.kind === "regulatory_decision" || /effective|proclamation|decision|deadline|final rule/i.test(c.title)) {

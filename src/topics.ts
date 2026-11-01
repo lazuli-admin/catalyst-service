@@ -29,7 +29,7 @@ export const TOPICS: Topic[] = [
   {
     id: "critical-minerals",
     label: "Critical minerals",
-    patterns: [/critical mineral|rare earth|\bDPAS\b|lithium|cobalt|graphite|gallium|germanium/i],
+    patterns: [/critical mineral|critical materials?|defense (supply chains?|industrial base)|rare earth|\bDPAS\b|lithium|cobalt|graphite|gallium|germanium/i],
     themes: ["critical minerals"],
     affectedTickers: ["MP", "ALB", "LAC"],
   },
@@ -201,6 +201,26 @@ export const TOPICS: Topic[] = [
     affectedTickers: ["BABA", "PDD", "JD", "BIDU", "NIO"],
   },
   {
+    id: "exchange-products-listings",
+    label: "Exchange products & listings",
+    patterns: [
+      // listed crypto/digital-asset ETFs, ETPs, trusts and their shares
+      /(crypto|digital[- ]asset|bitcoin|ether(eum)?|solana)[^.;]{0,60}(ETF|ETP|exchange-traded|trust|shares)/i,
+      /commodity[- ]based trust shares?/i,
+      // options on ETFs/trusts holding crypto
+      /options?[^.;]{0,40}(ETF|trust)[^.]{0,30}(holding|that hold)[^.;]{0,20}(crypto|bitcoin|digital asset)/i,
+      /tokenized securities|tokeniz(ation|ed form)/i,
+      /generic listing (standards|criteria)|continued listing (standards|requirements)/i,
+      /\bevent contracts?\b/i,
+      // index options expiring on additional days (keep scoped to options/expirations)
+      /(options|expir\w*)[^.;]{0,80}(Monday|Tuesday|Wednesday|Thursday|Friday|daily|end-of-month)/i,
+      /position (and|or) exercise limits/i,
+    ],
+    themes: ["exchange products"],
+    // illustrative: COIN, HOOD, CME, ICE, NDAQ, CBOE, IBIT
+    affectedTickers: [],
+  },
+  {
     id: "china-trade",
     label: "China trade",
     patterns: [/\bChin(?:a|ese)\b|\bPRC\b/i],
@@ -227,7 +247,8 @@ export const NOISE_PATTERNS: RegExp[] = [
   AD_CVD_RE,
   /information collection|submission (to|for) (the )?OMB|paperwork reduction/i,
   /^sunshine act/i,
-  /^self-regulatory organizations/i,
+  // SRO noise only: routine procedural/admin filings (fees, timing, technical/clarifying/conforming tweaks), not substantive rule filings.
+  /^self-regulatory organizations\b.*(\bfees?\b|fee schedule|pricing|designation of (a )?longer period|extension of (the )?time|technical (changes?|amendments?)|clarif(y|ying|ication)|conforming (changes?|amendments?))/i,
   /petition for rulemaking|petition for reconsideration/i,
   /commercial gauger|commercial laborator/i,
   /list of rules to be reviewed/i,

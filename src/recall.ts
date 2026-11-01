@@ -1,10 +1,11 @@
 // Recall gate for the Federal Register sync: measures how many labeled-relevant docs
-// the sync queries + topic filter actually admit. Pure, no I/O — see scripts/recall.ts.
+// the sync queries (FR_AGENCIES Rule/Proposed Rule/Notice + the all-agencies
+// PRESDOCU query) + topic filter actually admit. Pure, no I/O — see scripts/recall.ts.
 // fr-blind-1 is now a REGRESSION set (topic fixes in test/topics-regression.test.ts were
 // informed by it), not a blind holdout.
 // fr-blind-2 (test/fixtures/fr-blind-2.json, seed-7 draw) is ALSO a REGRESSION set, not a
 // blind holdout, since it may have informed topic tuning.
-import { FR_AGENCIES, NOTICE_AGENCY_LABELS } from "./catalysts/federal-register.js";
+import { FR_AGENCIES } from "./catalysts/federal-register.js";
 import { isRelevant } from "./topics.js";
 
 export interface FrBlindRow {
@@ -34,11 +35,12 @@ const DISPLAY_TO_LABEL: Record<string, string> = {
 };
 
 export function rowIsFetched(row: FrBlindRow): boolean {
+  // Presidential docs come from the standalone PRESDOCU query, no agency needed.
+  if (row.type === "Presidential Document") return true;
   return row.agency.split(";").some((name) => {
     const label = DISPLAY_TO_LABEL[name.trim()];
     if (!label || !FR_LABELS.has(label)) return false;
-    if (row.type === "Rule" || row.type === "Proposed Rule") return true;
-    return row.type === "Notice" && NOTICE_AGENCY_LABELS.includes(label);
+    return row.type === "Rule" || row.type === "Proposed Rule" || row.type === "Notice";
   });
 }
 

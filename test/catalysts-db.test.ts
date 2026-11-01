@@ -48,6 +48,18 @@ describe("catalysts db", () => {
     expect(c.title).toBe("FOMC renamed");
   });
 
+  it("upsert updates kind at equal tier, keeps old kind at worse tier", async () => {
+    const store = await memoryStore();
+    const a = await store.upsertCatalyst({ ...base, kind: "regulatory_decision" });
+    const b = await store.upsertCatalyst({ ...base, kind: "comment_close" });
+    expect(b.id).toBe(a.id);
+    expect(b.kind).toBe("comment_close");
+
+    const c = await store.upsertCatalyst({ ...base, kind: "earnings", sourceTier: 3 });
+    expect(c.id).toBe(a.id);
+    expect(c.kind).toBe("comment_close");
+  });
+
   it("filters by window, ticker and theme", async () => {
     const store = await memoryStore();
     await store.upsertCatalyst(base);

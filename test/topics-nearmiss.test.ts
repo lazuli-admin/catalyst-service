@@ -85,6 +85,44 @@ describe("topic near-misses", () => {
     expect(isRelevant(doc("Initiation of Antidumping and Countervailing Duty Administrative Reviews"))).toBe(false);
   });
 
+  it("exchange-products-listings: keeps listed crypto ETPs/trusts, generic listing standards, tokenized securities, event contracts, position limits, and options expiring on additional days; drops fee and procedural noise", () => {
+    const pre = "Self-Regulatory Organizations; Example Exchange; Notice of Filing of a Proposed Rule Change";
+    const keeps = [
+      `${pre} To List and Trade Shares of the Example Ether Trust`,
+      `${pre} To Adopt Generic Listing Standards for Commodity-Based Trust Shares`,
+      `${pre} To Permit Trading of Securities in Tokenized Form`,
+      `${pre} To Amend Continued Listing Standards`,
+      `${pre} To List Event Contracts`,
+      `${pre} To Increase Position and Exercise Limits for Options on a Bitcoin ETF`,
+      `${pre} To Permit Index Options That Expire on Monday and Wednesday`,
+    ];
+    for (const title of keeps) {
+      expect(isRelevant(doc(title)), title).toBe(true);
+      expect(topicTags(doc(title)).topics, title).toContain("exchange-products-listings");
+    }
+    const drops = [
+      "Self-Regulatory Organizations; Example Exchange; Notice of Filing To Amend the Fee Schedule for Bitcoin ETF Options",
+      "Self-Regulatory Organizations; Example Exchange; Notice of Filing of a Proposed Rule Change To Amend Rule 2210 (Communications With the Public)",
+      "Self-Regulatory Organizations; Example Clearing Agency; Designation of a Longer Period for Commission Action on Treasury Clearing",
+    ];
+    for (const title of drops) {
+      expect(isRelevant(doc(title)), title).toBe(false);
+    }
+  });
+
+  it("critical-minerals: keeps critical materials and defense industrial base/supply chain wording, drops materials science meetings", () => {
+    const keeps = [
+      "Securing Critical Materials for Domestic Manufacturing",
+      "Strengthening the Defense Industrial Base",
+      "Resilient Defense Supply Chains",
+    ];
+    for (const title of keeps) {
+      expect(isRelevant(doc(title)), title).toBe(true);
+      expect(topicTags(doc(title)).topics, title).toContain("critical-minerals");
+    }
+    expect(isRelevant(doc("Materials Science Advisory Board Meeting"))).toBe(false);
+  });
+
   it("foreign issuer disclosure: keeps HFCAA and foreign private issuer rules, drops foreign trade zone reports", () => {
     expect(isRelevant(doc("Holding Foreign Insiders Accountable Act Disclosure"))).toBe(true);
     const fpi = "Amendments to the Definition of Foreign Private Issuer";

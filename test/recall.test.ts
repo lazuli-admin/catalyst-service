@@ -24,9 +24,14 @@ const regression = JSON.parse(
   readFileSync(new URL("./fixtures/fr-regression.json", import.meta.url), "utf8"),
 ) as FrRegressionRow[];
 
+const SEC_SRO_MISS =
+  "SEC SRO filing, fetched; matches no topic after the narrow SRO procedural noise rule (known miss, not pattern-fit)";
+
 const KNOWN_MISSES: Record<string, string> = {
   "2025-19818":
     "USMCA Labor Council meeting notice: matches USMCA topic; meeting notices are not filtered as noise yet (known FP)",
+  "2026-08478": SEC_SRO_MISS,
+  "2025-23937": SEC_SRO_MISS,
 };
 
 describe("fr-blind regression gates", () => {

@@ -1,9 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { ELECTIONS, FR_AGENCIES, getLastFrSyncReport, syncElections, syncFederalRegister } from "../src/catalysts/federal-register.js";
-import { isRelevant } from "../src/topics.js";
+import { isRelevant, topicTags } from "../src/topics.js";
 import type { Catalyst } from "../src/types.js";
 
-const res = (body: unknown, ok = true) => ({ ok, status: ok ? 200 : 500, json: async () => body });
+const res = (body: unknown, ok = true) => ({
+  ok,
+  status: ok ? 200 : 500,
+  json: async () => body,
+  text: async () => (typeof body === "string" ? body : JSON.stringify(body)),
+});
 const BIS = "industry-and-security-bureau";
 const FTC = "federal-trade-commission";
 
@@ -12,14 +17,27 @@ const store = () => ({
   listStaleCatalysts: vi.fn(async (..._a: unknown[]): Promise<{ dedupeKey: string; title: string }[]> => []),
   purgeStaleCatalysts: vi.fn(async (_kind: string, _from: string, _before: string, _keyPrefix: string) => 0),
 });
-const opts = { today: "2026-11-01", horizonDays: 14 };
+const opts = { today: "2026-11-01", horizonDays: 14, sleep: async () => {} };
 const catalysts = (s: ReturnType<typeof store>) => s.upsertCatalyst.mock.calls.map(([c]) => c as Catalyst);
 
 function mockFetch(bySlug: Record<string, unknown>, failingSlugs: string[] = []) {
   return vi.fn(async (url: string) => {
+    // Raw-text fetches (presidential docs) return the plain text stored under "rawText".
+    if (!url.includes("documents.json")) return res(bySlug.rawText ?? "", !failingSlugs.includes("rawText"));
+    const page = Number(/[?&]page=(\d+)/.exec(url)?.[1] ?? 1);
     for (const [slug, body] of Object.entries(bySlug)) {
-      if (url.includes(`agencies][]=${slug}`)) return res(body, !failingSlugs.includes(slug));
+      if (slug === "rawText" || !url.includes(slug)) continue;
+      if (typeof body === "function") {
+        const out = (body as (p: number) => unknown)(page);
+        // A function may return a pre-built response (e.g. res(x, false) for a 500).
+        if (out && typeof out === "object" && "ok" in (out as object)) return out as ReturnType<typeof res>;
+        return res(out, !failingSlugs.includes(slug));
+      }
+      // A body without total_pages describes page 1 only; later pages are empty.
+      if (page >= 2) return res({ results: [] }, !failingSlugs.includes(slug));
+      return res(body, !failingSlugs.includes(slug));
     }
+    // PRESDOCU (and anything else unmatched) returns an empty result set by default.
     return res({ results: [] });
   });
 }
@@ -50,7 +68,7 @@ describe("syncFederalRegister", () => {
       status: "scheduled",
       dateStart: "2026-11-10",
       dateEnd: "2026-11-10",
-      datePrecision: "exact",
+      datePrecision: "estimated",
       confidence: 0.9,
       themes: ["semiconductor export controls"],
       affectedTickers: ["NVDA", "AMD", "AMAT", "LRCX", "KLAC", "ASML", "TSM", "MU"],
@@ -117,7 +135,7 @@ describe("syncFederalRegister", () => {
     const rows = catalysts(s);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      kind: "regulatory_decision",
+      kind: "comment_close",
       dateStart: "2026-11-09",
       dateEnd: "2026-11-09",
       dedupeKey: "fr:fcc-prop-1:comments:2026-11-09",
@@ -182,11 +200,13 @@ describe("syncFederalRegister", () => {
     const s = store();
     const started = new Date().toISOString();
     await syncFederalRegister(s, { ...opts, fetch: mockFetch({}) as unknown as typeof fetch });
-    expect(s.purgeStaleCatalysts).toHaveBeenCalledTimes(2);
+    expect(s.purgeStaleCatalysts).toHaveBeenCalledTimes(4);
     const [kind, from, before, keyPrefix] = s.purgeStaleCatalysts.mock.calls[0]!;
     expect([kind, from, keyPrefix]).toEqual(["rule_effective", opts.today, "fr:"]);
     expect(before >= started && before <= new Date().toISOString()).toBe(true);
-    expect(s.purgeStaleCatalysts.mock.calls[1]).toEqual(["regulatory_decision", opts.today, expect.any(String), "fr:"]);
+    expect(s.purgeStaleCatalysts.mock.calls[1]).toEqual(["comment_close", opts.today, expect.any(String), "fr:"]);
+    expect(s.purgeStaleCatalysts.mock.calls[2]).toEqual(["presidential_action", opts.today, expect.any(String), "fr:"]);
+    expect(s.purgeStaleCatalysts.mock.calls[3]).toEqual(["regulatory_decision", opts.today, expect.any(String), "fr:"]);
   });
 
   it("reports stale rows it purges: fetched doc with no topic match -> 'no topic match'", async () => {
@@ -359,7 +379,7 @@ describe("trade agencies (USTR/ITA/CBP)", () => {
 });
 
 describe("SEC", () => {
-  it("keeps RULE/PRORULE, drops housekeeping titles, does not query NOTICE", async () => {
+  it("keeps topic titles, drops housekeeping titles, and its URL includes conditions[type][]=NOTICE", async () => {
     const fetchImpl = mockFetch({
       "securities-and-exchange-commission": {
         results: [
@@ -373,7 +393,7 @@ describe("SEC", () => {
     await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
     expect(catalysts(s).map((r) => r.title)).toEqual(["Amendments to Regulation SBSR for Shareholder Proposals"]);
     const url = String(fetchImpl.mock.calls.find(([u]) => String(u).includes("securities-and-exchange"))![0]);
-    expect(url).not.toContain("NOTICE");
+    expect(url).toContain("conditions[type][]=NOTICE");
   });
 });
 
@@ -391,8 +411,27 @@ describe("comments_close_on", () => {
     const rows = catalysts(s);
     expect(rows.map((r) => [r.kind, r.title, r.dedupeKey])).toEqual([
       ["rule_effective", "Section 301 Tariff Action on China", "fr:ustr-9:2026-11-05"],
-      ["regulatory_decision", "USTR comments close: Section 301 Tariff Action on China", "fr:ustr-9:comments:2026-11-12"],
+      ["comment_close", "USTR comments close: Section 301 Tariff Action on China", "fr:ustr-9:comments:2026-11-12"],
     ]);
+  });
+
+  it("topic assignment is invariant to agency", () => {
+    const agencyLabels = [...Object.values(FR_AGENCIES).map((a) => a.label), "President"];
+    const docs = [
+      { title: "Advanced computing chip rule", abstract: "", documentNumber: "chip-1" },
+      { title: "Spectrum Sharing in the 6 GHz Band", abstract: "", documentNumber: "fcc-1" },
+      { title: "Section 301 Tariff Action on China", abstract: "", documentNumber: "ustr-9" },
+    ];
+    for (const doc of docs) {
+      const baseTags = topicTags({ ...doc, agency: agencyLabels[0] });
+      const baseRelevant = isRelevant({ ...doc, agency: agencyLabels[0] });
+      expect(baseRelevant).toBe(true);
+      expect(baseTags.topics.length).toBeGreaterThan(0);
+      for (const agency of agencyLabels.slice(1)) {
+        expect(topicTags({ ...doc, agency })).toEqual(baseTags);
+        expect(isRelevant({ ...doc, agency })).toBe(baseRelevant);
+      }
+    }
   });
 
   it("ignores comments_close_on outside the window or malformed", async () => {
@@ -407,5 +446,138 @@ describe("comments_close_on", () => {
     const s = store();
     await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
     expect(catalysts(s).every((r) => r.kind === "rule_effective")).toBe(true);
+  });
+});
+
+describe("federal register paging and PRESDOCU", () => {
+  it("multi-page: page 1 and page 2 docs are both upserted, purge runs, report complete, query pages 2", async () => {
+    const fetchImpl = mockFetch({
+      [BIS]: (page: number) =>
+        page === 1
+          ? {
+              results: [{ title: "Advanced computing chip rule", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "mp-1" }],
+              total_pages: 2,
+            }
+          : {
+              results: [{ title: "Advanced computing chip rule II", effective_on: "2026-11-06", html_url: "u", abstract: "", document_number: "mp-2" }],
+            },
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
+    const rows = catalysts(s);
+    expect(rows.map((r) => r.dedupeKey)).toEqual(["fr:mp-1:2026-11-05", "fr:mp-2:2026-11-06"]);
+    expect(s.purgeStaleCatalysts).toHaveBeenCalledTimes(4);
+    const report = getLastFrSyncReport();
+    expect(report!.complete).toBe(true);
+    const bis = report!.queries.find((q) => q.name === "BIS");
+    expect(bis).toMatchObject({ pages: 2, totalPages: 2, ok: true });
+  });
+
+  it("mid-paging failure: page-1 doc is kept, no purge, report complete false with query error", async () => {
+    const fetchImpl = mockFetch({
+      [BIS]: (page: number) =>
+        page === 1
+          ? {
+              results: [{ title: "Advanced computing chip rule", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "mf-1" }],
+              total_pages: 2,
+            }
+          : res({}, false),
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
+    expect(catalysts(s).map((r) => r.dedupeKey)).toEqual(["fr:mf-1:2026-11-05"]);
+    expect(s.purgeStaleCatalysts).not.toHaveBeenCalled();
+    expect(s.listStaleCatalysts).not.toHaveBeenCalled();
+    const report = getLastFrSyncReport();
+    expect(report!.complete).toBe(false);
+    expect(report!.count).toBe(0);
+    expect(report!.drops).toEqual([]);
+    // pages counts successfully fetched pages; page 2 failed before being counted.
+    expect(report!.queries.find((q) => q.name === "BIS")).toMatchObject({ ok: false, pages: 1, totalPages: 2, error: "HTTP 500" });
+  });
+
+  it("page cap: total_pages 25 stops at the cap with 'page cap exceeded', no purge", async () => {
+    // Every page carries a result (an empty page would end the loop before the cap check).
+    const doc = { title: "Advanced computing chip rule", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "cap-1" };
+    const fetchImpl = mockFetch({
+      [BIS]: (page: number) => (page === 1 ? { results: [doc], total_pages: 25 } : { results: [doc] }),
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
+    expect(s.upsertCatalyst).toHaveBeenCalledTimes(20);
+    expect(s.purgeStaleCatalysts).not.toHaveBeenCalled();
+    const report = getLastFrSyncReport();
+    expect(report!.complete).toBe(false);
+    expect(report!.queries.find((q) => q.name === "BIS")).toMatchObject({ ok: false, error: "page cap exceeded" });
+    expect(report!.queries.find((q) => q.name === "BIS")).toMatchObject({ pages: 20 });
+  });
+
+  it("PRESDOCU: proclamation with a raw-text midnight clause becomes a presidential_action row", async () => {
+    const fetchImpl = mockFetch({
+      PRESDOCU: {
+        results: [
+          {
+            title: "Adjusting Imports of Steel Into the United States Under Section 232",
+            type: "Presidential Document",
+            subtype: "Proclamation",
+            effective_on: null,
+            html_url: "https://www.federalregister.gov/d/2026-26301",
+            abstract: "",
+            document_number: "2026-26301",
+            raw_text_url: "https://www.federalregister.gov/documents/full_text/raw/2026-26301.txt",
+          },
+        ],
+        total_pages: 1,
+      },
+      rawText: "Adjusted imports of steel shall apply on or after 12:01 a.m. eastern time on December 4, 2026.",
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, horizonDays: 60, fetch: fetchImpl as unknown as typeof fetch });
+    const rows = catalysts(s);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      kind: "presidential_action",
+      dateStart: "2026-12-04",
+      dateEnd: "2026-12-04",
+      datePrecision: "estimated",
+      status: "scheduled",
+      sourceUrl: "https://www.federalregister.gov/d/2026-26301",
+      dedupeKey: "fr:2026-26301:2026-12-04",
+    });
+    expect(rows[0]!.title).toMatch(/^Proclamation in effect Dec 4:/);
+    expect(getLastFrSyncReport()!.complete).toBe(true);
+    expect(getLastFrSyncReport()!.queries.find((q) => q.name === "PRESDOCU")).toMatchObject({ pages: 1, ok: true });
+    expect(s.purgeStaleCatalysts).toHaveBeenCalledTimes(4);
+  });
+
+  it("PRESDOCU: raw-text fetch failing (500) -> no purge, report complete false", async () => {
+    const fetchImpl = mockFetch(
+      {
+        PRESDOCU: {
+          results: [
+            {
+              title: "Adjusting Imports of Steel Into the United States Under Section 232",
+              type: "Presidential Document",
+              subtype: "Proclamation",
+              effective_on: null,
+              html_url: "https://www.federalregister.gov/d/2026-26301",
+              abstract: "",
+              document_number: "2026-26301",
+              raw_text_url: "https://www.federalregister.gov/documents/full_text/raw/2026-26301.txt",
+            },
+          ],
+          total_pages: 1,
+        },
+        rawText: "on or after 12:01 a.m. eastern time on December 4, 2026",
+      },
+      ["rawText"],
+    );
+    const s = store();
+    await syncFederalRegister(s, { ...opts, horizonDays: 60, fetch: fetchImpl as unknown as typeof fetch });
+    expect(catalysts(s)).toHaveLength(0);
+    expect(s.purgeStaleCatalysts).not.toHaveBeenCalled();
+    const report = getLastFrSyncReport();
+    expect(report!.complete).toBe(false);
+    expect(report!.queries.find((q) => q.name === "PRESDOCU")).toMatchObject({ ok: false, error: "HTTP 500" });
   });
 });
