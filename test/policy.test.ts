@@ -22,11 +22,17 @@ describe("frDocNumbersFromEvents", () => {
     expect(frDocNumbersFromEvents([{ sourceUrl: "https://x/2", documentNumber: "2026-16979" }])).toEqual(new Set(["2026-16979"]));
   });
 
+  it("picks up each FR doc number in relatedFrDocumentNumbers", () => {
+    expect(frDocNumbersFromEvents([{ sourceUrl: "https://x/1", relatedFrDocumentNumbers: ["2025-19873", "2026-21755"] }])).toEqual(new Set(["2025-19873", "2026-21755"]));
+  });
+
   it("the real data/policy-events.json yields the curated FR doc numbers", async () => {
     const nums = await curatedFrDocNumbers("data/policy-events.json");
     expect(nums.has("2026-16400")).toBe(true);
     expect(nums.has("2026-16979")).toBe(true);
     expect(nums.has("2025-21671")).toBe(true);
+    expect(nums.has("2025-19873")).toBe(true);
+    expect(nums.has("2026-21755")).toBe(true);
   });
 
   it("fails closed: rejects on a nonexistent path (including ENOENT)", async () => {
@@ -43,6 +49,14 @@ describe("frDocNumbersFromEvents", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+  it("the maritime suspension-end event's title mentions the Nov 10 end and the proposed-extension doc 2026-21755", async () => {
+    const body = JSON.parse(await (await import("node:fs/promises")).readFile("data/policy-events.json", "utf8")) as { events: { id: string; title: string }[] };
+    const title = body.events.find((e) => e.id === "ustr-301-maritime-suspension-end")!.title;
+    expect(title).toContain("Nov 10");
+    expect(title).toContain("2026-21755");
+  });
+
+  it.todo("step 7: one event, multiple FR docs (2025-19873 basis, 2026-21755 proposed extension) → one canonical row");
 });
 
 const store = () => ({

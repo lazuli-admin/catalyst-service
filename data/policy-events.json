@@ -6,9 +6,13 @@
    "date": "2026-11-10",
    "dateEnd": "2026-11-10",
    "precision": "exact",
-   "title": "USTR Section 301 China maritime/shipbuilding action suspension ends (through 11:59 p.m. ET Nov 9); port fees and crane tariffs resume unless USTR finalizes its proposed extension to 2027-01-09",
+   "title": "USTR Section 301 China maritime/shipbuilding action suspension ends Nov 10 unless extended (USTR proposed extension through Jan 9, 2027: FR 2026-21755, comments open)",
    "kind": "rule_effective",
-   "sourceUrl": "https://www.federalregister.gov/documents/2026/10/26/2026-21755/request-for-comments-on-further-suspension-of-section-301-action-chinas-targeting-of-the-maritime",
+   "sourceUrl": "https://www.federalregister.gov/documents/2025/11/13/2025-19873/notice-of-modification-of-section-301-action-chinas-targeting-of-the-maritime-logistics-and",
+   "frDocumentNumber": "2025-19873",
+   "relatedFrDocumentNumbers": [
+    "2026-21755"
+   ],
    "themes": [
     "shipping",
     "ports",

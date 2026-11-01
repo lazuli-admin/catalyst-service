@@ -41,7 +41,7 @@ const ALLOWLIST = [
   "src/catalysts/page.ts:121",
   "src/catalysts/page.ts:187",
   "src/catalysts/page.ts:188",
-  "src/catalysts/policy.ts:37",
+  "src/catalysts/policy.ts:41",
   "src/market.ts:143",
 ];
 

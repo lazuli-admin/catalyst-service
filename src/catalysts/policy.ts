@@ -8,7 +8,7 @@ import { errorMessage } from "../util.js";
 /** FR document number, e.g. 2026-16400. */
 export const FR_DOC_NUMBER_RE = /\b(\d{4}-\d{5})\b/g;
 
-export type FrNumberedEvent = Pick<PolicyEvent, "sourceUrl"> & { frDocumentNumber?: string; documentNumber?: string };
+export type FrNumberedEvent = Pick<PolicyEvent, "sourceUrl"> & { frDocumentNumber?: string; documentNumber?: string; relatedFrDocumentNumbers?: string[] };
 
 /** FR document numbers referenced by curated events: from the /documents/YYYY/MM/DD/<doc-number>/ URL, or an explicit field. Pure. */
 export function frDocNumbersFromEvents(events: FrNumberedEvent[]): Set<string> {
@@ -16,6 +16,10 @@ export function frDocNumbersFromEvents(events: FrNumberedEvent[]): Set<string> {
   for (const e of events) {
     for (const field of [e.frDocumentNumber, e.documentNumber]) {
       // String.match resets the global regex's lastIndex, so repeated calls stay safe.
+      const m = typeof field === "string" ? field.match(FR_DOC_NUMBER_RE) : null;
+      if (m) out.add(m[0]);
+    }
+    for (const field of e.relatedFrDocumentNumbers ?? []) {
       const m = typeof field === "string" ? field.match(FR_DOC_NUMBER_RE) : null;
       if (m) out.add(m[0]);
     }
