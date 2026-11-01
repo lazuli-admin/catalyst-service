@@ -1,8 +1,9 @@
 // Free daily prices (Yahoo chart API) and per-trade "big move day" detection: an objective check on alerts
 // that doesn't depend on hand-picked labels. A big day is a candidate catalyst, not proof one was missed.
 import type { Trade } from "./types.js";
+import { etParts } from "./clock.js";
 
-const ET = "America/New_York";
+export { etParts } from "./clock.js";
 /** A basket had a big day when its average absolute move is at least this multiple of its typical day. */
 export const BIG_MOVE_MULTIPLE = 2.5;
 const BASELINE_DAYS = 60;
@@ -56,24 +57,6 @@ export interface MarketCheck {
   days: TradeDay[];
   pushes: PushOutcome[];
   missing: string[];
-}
-
-/** ET calendar date ("YYYY-MM-DD") and time ("HH:MM"). */
-export function etParts(at: Date): { date: string; time: string } {
-  const p = Object.fromEntries(
-    new Intl.DateTimeFormat("en-CA", {
-      timeZone: ET,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-    })
-      .formatToParts(at)
-      .map((x) => [x.type, x.value]),
-  );
-  return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}` };
 }
 
 interface ChartResponse {
