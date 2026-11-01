@@ -1,4 +1,5 @@
 import { loadConfig, type Config } from "./config.js";
+import { createSyncLock } from "./lock.js";
 import { openStore, type Store } from "./db.js";
 import { createCatalystExtractor } from "./catalysts/extract.js";
 import { DEFAULT_THEMES, DEFAULT_WATCHLIST, runProspect } from "./catalysts/prospect.js";
@@ -61,6 +62,7 @@ async function main(): Promise<void> {
   const store = await openStore(config.databaseUrl, config.tursoAuthToken);
   if (config.seedDefaults) await seed(store);
   const deps = createDeps(config, store);
+  const lock = createSyncLock((m) => deps.log?.(m));
 
   const app = buildServer(store, deps);
   await app.listen({ port: config.port, host: config.host });
@@ -73,7 +75,9 @@ async function main(): Promise<void> {
   const calendarHorizonDays = Number(process.env.CALENDAR_HORIZON_DAYS ?? 45);
   const policyHorizonDays = Number(process.env.POLICY_HORIZON_DAYS ?? 180);
   const syncCalendarsNow = () => {
-    void syncCalendars(store, { from: marketToday(deps.clock ?? systemClock), days: calendarHorizonDays, policyHorizonDays, watchlist, minMarketCap, log: (m) => deps.log?.(`[calendars] ${m}`) });
+    void lock.run("calendar-sync", () =>
+      syncCalendars(store, { from: marketToday(deps.clock ?? systemClock), days: calendarHorizonDays, policyHorizonDays, watchlist, minMarketCap, log: (m) => deps.log?.(`[calendars] ${m}`) }),
+    );
   };
   if (process.env.NODE_ENV !== "test") {
     syncCalendarsNow();
@@ -97,7 +101,7 @@ async function main(): Promise<void> {
         const counts = await prospect();
         deps.log?.(`prospect: ${counts.items} items from ${counts.queries} queries, ${counts.stored} catalysts`);
       }
-      await runDueSources(deps, config.pollIntervalSeconds);
+      await lock.run("source-poll", () => runDueSources(deps, config.pollIntervalSeconds));
       if (config.digestTime && config.barkUrl) {
         await maybeSendDigest(
           { store, barkUrl: config.barkUrl, market: true, log: deps.log },

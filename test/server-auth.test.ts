@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { buildServer } from "../src/server.js";
 import { deps, memoryStore } from "./helpers.js";
 
@@ -33,5 +33,49 @@ describe("API key auth", () => {
   it("returns 201 for mutations with the correct key", async () => {
     const res = await app.inject({ method: "POST", url: "/themes", payload: { name: "test-theme" }, headers: { "x-api-key": KEY } });
     expect(res.statusCode).toBe(201);
+  });
+
+  it("returns 401 for a wrong key of the same length", async () => {
+    const res = await app.inject({ method: "POST", url: "/themes", payload: { name: "x" }, headers: { "x-api-key": "xxxxxxxxxx".slice(0, KEY.length) } });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("returns 401 for a wrong key of a different length", async () => {
+    const res = await app.inject({ method: "POST", url: "/themes", payload: { name: "x" }, headers: { "x-api-key": "short" } });
+    expect(res.statusCode).toBe(401);
+  });
+});
+
+describe("production requires CATALYST_API_KEY", () => {
+  const originalEnv = process.env.NODE_ENV;
+  const originalKey = process.env.CATALYST_API_KEY;
+
+  afterEach(() => {
+    process.env.NODE_ENV = originalEnv;
+    if (originalKey === undefined) delete process.env.CATALYST_API_KEY;
+    else process.env.CATALYST_API_KEY = originalKey;
+  });
+
+  it("throws when unset in production", async () => {
+    process.env.NODE_ENV = "production";
+    delete process.env.CATALYST_API_KEY;
+    const store = await memoryStore();
+    expect(() => buildServer(store, deps(store))).toThrow("CATALYST_API_KEY must be set in production");
+  });
+
+  it("throws when empty in production", async () => {
+    process.env.NODE_ENV = "production";
+    process.env.CATALYST_API_KEY = "   ";
+    const store = await memoryStore();
+    expect(() => buildServer(store, deps(store))).toThrow("CATALYST_API_KEY must be set in production");
+  });
+
+  it("does not throw in production with a key", async () => {
+    process.env.NODE_ENV = "production";
+    process.env.CATALYST_API_KEY = KEY;
+    const store = await memoryStore();
+    const prod = buildServer(store, deps(store));
+    await prod.ready();
+    await prod.close();
   });
 });
