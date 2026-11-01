@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { classify, operativeText, parseTextDates, roleDates, type FrApiDoc } from "../src/catalysts/fr-classify.js";
+import { classify, hasOperativeMarker, operativeText, parseTextDates, roleDates, type FrApiDoc } from "../src/catalysts/fr-classify.js";
 
 const WINDOW = { today: "2026-11-01", end: "2027-05-01" };
 
@@ -253,6 +253,150 @@ describe("fr-classify synthetic", () => {
       expect(rows).toEqual([]);
     }
   });
+
+  it("roleDates: effective-through sentence yields the effective date AND the expiry date", () => {
+    const rows = roleDates("This rule is effective September 22, 2026, through December 3, 2026.");
+    expect(rows.map((r) => [r.role, r.date])).toEqual([
+      ["effective", "2026-09-22"],
+      ["expiry", "2026-12-04"],
+    ]);
+  });
+
+  it('rule "The exemption expires December 3, 2026." → rule_expiry 2026-12-04 (first day not in force)', () => {
+    const rows = classify(base({ dates: "The exemption expires December 3, 2026." }), WINDOW);
+    expect(rows).toHaveLength(1);
+    const r = rows[0]!;
+    expect(r.kind).toBe("rule_expiry");
+    expect(r.role).toBe("expiry");
+    expect(r.date).toBe("2026-12-04");
+    expect(r.datePrecision).toBe("exact");
+    expect(r.dateSource).toBe("text");
+    expect(r.title).toBe("BIS: expires — first day not in force Dec 4 — Test doc");
+  });
+
+  it('rule "This rule expires on December 3, 2026." → 2026-12-04', () => {
+    const rows = classify(base({ dates: "This rule expires on December 3, 2026." }), WINDOW);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe("rule_expiry");
+    expect(rows[0]!.date).toBe("2026-12-04");
+  });
+
+  it('rule "effective September 22, 2026, through December 3, 2026" → only the expiry row (Sep 22 is past)', () => {
+    const rows = classify(base({ dates: "This rule is effective September 22, 2026, through December 3, 2026." }), WINDOW);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe("rule_expiry");
+    expect(rows[0]!.role).toBe("expiry");
+    expect(rows[0]!.date).toBe("2026-12-04");
+  });
+
+  it('rule "This rule is effective until December 3, 2026." → expiry 2026-12-04', () => {
+    const rows = classify(base({ dates: "This rule is effective until December 3, 2026." }), WINDOW);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe("rule_expiry");
+    expect(rows[0]!.date).toBe("2026-12-04");
+  });
+
+  it('rule "expires at 12:01 a.m. … on December 3, 2026" → first day not in force is 2026-12-03 itself', () => {
+    const rows = classify(base({ dates: "The exemption expires at 12:01 a.m. eastern time on December 3, 2026." }), WINDOW);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe("rule_expiry");
+    expect(rows[0]!.role).toBe("expiry");
+    expect(rows[0]!.date).toBe("2026-12-03");
+  });
+
+  it('suspension "until 12:01 a.m. … on December 3, 2026" → 2026-12-03, not 12-04', () => {
+    const rows = classify(
+      base({ dates: "The tariffs remain suspended until 12:01 a.m. eastern standard time on December 3, 2026." }),
+      WINDOW,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.role).toBe("expiry");
+    expect(rows[0]!.date).toBe("2026-12-03");
+  });
+
+  it('"through 11:59 p.m. …" keeps role effective at the next day (unchanged), no expiry row', () => {
+    const rows = classify(base({ dates: "through 11:59 p.m. eastern time on December 3, 2026" }), WINDOW);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.role).toBe("effective");
+    expect(rows[0]!.kind).toBe("rule_effective");
+    expect(rows[0]!.date).toBe("2026-12-04");
+  });
+
+  it('negative direction: "Effective December 3, 2026." is effective on the day, no expiry row', () => {
+    const rows = classify(base({ dates: "Effective December 3, 2026." }), WINDOW);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.role).toBe("effective");
+    expect(rows[0]!.kind).toBe("rule_effective");
+    expect(rows[0]!.date).toBe("2026-12-03");
+    expect(rows.some((r) => r.role === "expiry")).toBe(false);
+  });
+
+  it("expiry date outside the window → no row", () => {
+    expect(classify(base({ dates: "The exemption expires June 3, 2027." }), WINDOW)).toEqual([]);
+  });
+});
+
+describe("fr-classify presidential operative markers", () => {
+  const presDoc = (bodyText: string): FrApiDoc => ({
+    title: "Test proclamation",
+    type: "Presidential Document",
+    subtype: "Proclamation",
+    abstract: null,
+    dates: null,
+    effective_on: null,
+    comments_close_on: null,
+    document_number: "2026-1-MARK",
+    html_url: "https://example.gov/doc",
+    agencyLabel: "President",
+    bodyText,
+  });
+
+  it("fixture 2025-19826 (real FR metadata + raw text): one exact presidential_action on 2026-11-10", () => {
+    const fixture = JSON.parse(
+      readFileSync(join(dirname(fileURLToPath(import.meta.url)), "fixtures", "fr-eo-2025-19826.json"), "utf8"),
+    ) as FrApiDoc;
+    expect(hasOperativeMarker(fixture)).toBe(true);
+    const rows = classify(fixture, WINDOW);
+    expect(rows).toHaveLength(1);
+    const r = rows[0]!;
+    expect(r.kind).toBe("presidential_action");
+    expect(r.date).toBe("2026-11-10");
+    expect(r.datePrecision).toBe("exact");
+    expect(r.dateSource).toBe("text");
+    expect(r.dedupeKey).toBe("fr:2025-19826:2026-11-10");
+  });
+
+  // Each text has a preamble role date (2027-01-15, in window) that MUST NOT be emitted: only the
+  // marker splits it off into the preamble. Exactly one marker per text.
+  const cases: [string, string][] = [
+    ["proclaim as follows", "The investigation found that duties became effective January 15, 2027. NOW, THEREFORE, I, the President of the United States of America, do hereby proclaim as follows: (1) Effective on or after 12:01 a.m. eastern time on December 1, 2026, the tariff applies."],
+    ["hereby ordered", "The policy is effective January 15, 2027. By the authority vested in me as President, it is hereby ordered as follows: (a) Effective December 1, 2026, the measures apply."],
+    ["I hereby direct", "The report is effective January 15, 2027. By virtue of my office, I hereby direct the Secretary of Commerce to apply the duties effective December 1, 2026."],
+    ["Sec. 1.", "The framework is effective January 15, 2027. Sec. 1. Policy. Effective December 1, 2026, the restrictions apply."],
+    ["Section 1.", "The framework is effective January 15, 2027. Section 1. Policy. Effective December 1, 2026, the restrictions apply."],
+  ];
+  for (const [markerLabel, body] of cases) {
+    it(`marker "${markerLabel}" opens the operative part: exact 2026-12-01, preamble date ignored`, () => {
+      const d = presDoc(body);
+      expect(hasOperativeMarker(d)).toBe(true);
+      const rows = classify(d, WINDOW);
+      expect(rows).toHaveLength(1);
+      const r = rows[0]!;
+      expect(r.kind).toBe("presidential_action");
+      expect(r.date).toBe("2026-12-01");
+      expect(r.datePrecision).toBe("exact");
+      expect(r.dateSource).toBe("text");
+    });
+  }
+
+  it("presidential doc without any marker: hasOperativeMarker false and rows estimated", () => {
+    const d = presDoc("The duties shall apply 12:01 a.m. eastern time on November 9, 2026.");
+    expect(hasOperativeMarker(d)).toBe(false);
+    const rows = classify(d, WINDOW);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.date).toBe("2026-11-09");
+    expect(rows[0]!.datePrecision).toBe("estimated");
+  });
 });
 
 // Deterministic LCG so property runs are reproducible.
@@ -468,7 +612,7 @@ describe("fr-classify date precision", () => {
     expect(rows.filter((r) => r.kind === "rule_effective")).toEqual([]);
   });
 
-  it("fr-classify date precision: preamble dates are ignored when the operative text has any role date", () => {
+  it("fr-classify date precision: operative expiry wins and the matching preamble date adds no second row", () => {
     const rows = classify({
       ...pd("2025-19846"),
       document_number: "T7",
@@ -480,6 +624,40 @@ describe("fr-classify date precision", () => {
       comments_close_on: null,
       bodyText: null,
     }, WINDOW);
-    expect(rows).toEqual([]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe("rule_expiry");
+    expect(rows[0]!.role).toBe("expiry");
+    expect(rows[0]!.date).toBe("2026-12-04");
+    expect(rows[0]!.dateSource).toBe("text");
+  });
+});
+
+describe("fr-classify comment-deadline filter", () => {
+  // Mutation-killer: without the `if (/\bcomments?\b/i.test(sentence)) continue;` guard in roleDates,
+  // the comment sentence would add a second (expiry) role date alongside the effective date.
+  const operative = "This rule is effective December 1, 2026. Comments must be received by December 15, 2026, and the comment period remains in force until December 15, 2026.";
+
+  it("roleDates: a comment-deadline sentence in operative text adds no second role date", () => {
+    const rows = roleDates(operative);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ date: "2026-12-01", role: "effective", raw: "effective December 1, 2026" });
+  });
+
+  it("classify: one rule_effective row, precision exact, no comment-date role", () => {
+    const rows = classify({
+      title: "Example product rule",
+      type: "Rule",
+      subtype: null,
+      abstract: null,
+      dates: operative,
+      effective_on: null,
+      comments_close_on: null,
+      document_number: "T-CD-1",
+      html_url: "https://example.com/d/T-CD-1",
+      agencyLabel: "BIS",
+      bodyText: null,
+    }, WINDOW);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ kind: "rule_effective", role: "effective", date: "2026-12-01", datePrecision: "exact", dateSource: "text" });
   });
 });

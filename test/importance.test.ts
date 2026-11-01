@@ -288,6 +288,12 @@ describe("new policy kinds", () => {
     expect(IMPORTANCE[classifyEvent(c)]).toBe(6);
   });
 
+  it("rule_expiry classifies as policy_suspension_end (importance 6)", () => {
+    const c = cat({ ticker: null, kind: "rule_expiry", dedupeKey: "fr:2026-1:2026-12-04", title: "BIS: expires — first day not in force Dec 4 — Test doc" });
+    expect(classifyEvent(c)).toBe("policy_suspension_end");
+    expect(IMPORTANCE[classifyEvent(c)]).toBe(6);
+  });
+
   it("comment_close classifies as policy_comment_close (importance 2)", () => {
     const c = cat({ ticker: null, kind: "comment_close", dedupeKey: "fr:cc-1:comments:2026-01-01", title: "Public comments close" });
     expect(classifyEvent(c)).toBe("policy_comment_close");

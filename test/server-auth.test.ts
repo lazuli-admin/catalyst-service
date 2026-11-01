@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createSyncLock } from "../src/lock.js";
+import { resetFrSyncReportForTests, syncFederalRegister } from "../src/catalysts/federal-register.js";
 import { buildServer, isLoopbackHost } from "../src/server.js";
 import { deps, memoryStore } from "./helpers.js";
 

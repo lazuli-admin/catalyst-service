@@ -166,7 +166,7 @@ export const TOPICS: Topic[] = [
     label: "Swaps & margining",
     patterns: [
       // bare "swap(s)" with general negative lookarounds to drop swap data repositories, currency/liquidity swaps, swap lines, and fund-affiliate swaps
-      /(?<!debt[- ]for[- ]nature |(?<!cross[- ])currency[- ]|liquidity[- ])\bswaps?\b(?!\s*(?:data repositor|lines?|with affiliated))|security-based swap|portfolio margin|cross-margin|clearing requirement determinations?|clearing agenc/i,
+      /(?<!debt[- ]for[- ]nature |(?<!cross[- ])currency[- ]|liquidity[- ])\bswaps?\b(?!\s*(?:data repositor|lines?|with affiliated))|security-based swap|portfolio margin|cross-margin|clearing requirement determinations?|clearing agenc(y|ies)\s+(rules?|registration|standards|risk management|regulation)|registration as a clearing agency|covered clearing agenc|standards for covered clearing agenc/i,
     ],
     themes: ["derivatives markets"],
     // tickers are hand-curated, illustrative
@@ -230,7 +230,11 @@ export const TOPICS: Topic[] = [
   {
     id: "tariffs-301-232",
     label: "Tariffs (301/232)",
-    patterns: [/section 301|section 232|section 122|\bIEEPA\b|reciprocal tariff|product exclusions?|tariff (actions?|modification|increase)|acts, policies,? and practices|trade act of 1974/i],
+    patterns: [
+      /section 301|section 232|\bIEEPA\b|reciprocal tariff|product exclusions?|tariff (actions?|modification|increase)|acts, policies,? and practices|trade act of 1974/i,
+      // bare "section 122" also names SRO rulebook sections; require trade context
+      /section 122\b[^.;]{0,80}(trade act|balance[- ]of[- ]payments|tariffs?|import surcharge|duties)|(trade act|balance[- ]of[- ]payments|tariffs?|import surcharge)[^.;]{0,80}section 122\b/i,
+    ],
     themes: ["tariffs"],
     affectedTickers: [],
   },

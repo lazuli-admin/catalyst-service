@@ -91,7 +91,7 @@ describe("syncFederalRegister", () => {
         results: [
           { title: "Future semiconductor rule", effective_on: "2026-11-05", html_url: "https://x/1", abstract: "", document_number: "doc-1" },
           { title: "Dual rule on integrated circuits", effective_on: "2026-11-06", html_url: "https://x/2", abstract: "suspension ends November 9, 2026", document_number: "doc-2" },
-          { title: "Dup rule for a foundry", effective_on: "2026-11-07", html_url: "https://x/3", abstract: "expires November 6, 2026", document_number: "doc-3" },
+          { title: "Dup rule for a foundry", effective_on: "2026-11-07", html_url: "https://x/3", abstract: "expires November 8, 2026", document_number: "doc-3" },
         ],
       },
     });
@@ -103,7 +103,7 @@ describe("syncFederalRegister", () => {
       ["Dual rule on integrated circuits", "2026-11-06"],
       ["BIS: rule back in force Nov 10 (suspension ends Nov 9) — Dual rule on integrated circuits", "2026-11-10"],
       ["Dup rule for a foundry", "2026-11-07"],
-      ["Dup rule for a foundry", "2026-11-06"],
+      ["BIS: expires — first day not in force Nov 9 — Dup rule for a foundry", "2026-11-09"],
     ]);
     expect(rows.every((r) => r.dedupeKey.startsWith("fr:"))).toBe(true);
     const abstractRow = rows[rows.length - 1]!;
@@ -214,13 +214,14 @@ describe("syncFederalRegister", () => {
     const s = store();
     const started = new Date().toISOString();
     await syncFederalRegister(s, { ...opts, fetch: mockFetch({}) as unknown as typeof fetch });
-    expect(s.purgeStaleCatalysts).toHaveBeenCalledTimes(4);
+    expect(s.purgeStaleCatalysts).toHaveBeenCalledTimes(5);
     const [kind, from, before, keyPrefix] = s.purgeStaleCatalysts.mock.calls[0]!;
     expect([kind, from, keyPrefix]).toEqual(["rule_effective", opts.today, "fr:"]);
     expect(before >= started && before <= new Date().toISOString()).toBe(true);
-    expect(s.purgeStaleCatalysts.mock.calls[1]).toEqual(["comment_close", opts.today, expect.any(String), "fr:"]);
-    expect(s.purgeStaleCatalysts.mock.calls[2]).toEqual(["presidential_action", opts.today, expect.any(String), "fr:"]);
-    expect(s.purgeStaleCatalysts.mock.calls[3]).toEqual(["regulatory_decision", opts.today, expect.any(String), "fr:"]);
+    expect(s.purgeStaleCatalysts.mock.calls[1]).toEqual(["rule_expiry", opts.today, expect.any(String), "fr:"]);
+    expect(s.purgeStaleCatalysts.mock.calls[2]).toEqual(["comment_close", opts.today, expect.any(String), "fr:"]);
+    expect(s.purgeStaleCatalysts.mock.calls[3]).toEqual(["presidential_action", opts.today, expect.any(String), "fr:"]);
+    expect(s.purgeStaleCatalysts.mock.calls[4]).toEqual(["regulatory_decision", opts.today, expect.any(String), "fr:"]);
   });
 
   it("reports stale rows it purges: fetched doc with no topic match -> 'no topic match'", async () => {
@@ -480,7 +481,7 @@ describe("federal register paging and PRESDOCU", () => {
     await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
     const rows = catalysts(s);
     expect(rows.map((r) => r.dedupeKey)).toEqual(["fr:mp-1:2026-11-05", "fr:mp-2:2026-11-06"]);
-    expect(s.purgeStaleCatalysts).toHaveBeenCalledTimes(4);
+    expect(s.purgeStaleCatalysts).toHaveBeenCalledTimes(5);
     const report = getLastFrSyncReport();
     expect(report!.complete).toBe(true);
     const bis = report!.queries.find((q) => q.name === "BIS");
@@ -561,7 +562,36 @@ describe("federal register paging and PRESDOCU", () => {
     expect(rows[0]!.title).toMatch(/^Proclamation in effect Dec 4:/);
     expect(getLastFrSyncReport()!.complete).toBe(true);
     expect(getLastFrSyncReport()!.queries.find((q) => q.name === "PRESDOCU")).toMatchObject({ pages: 1, ok: true });
-    expect(s.purgeStaleCatalysts).toHaveBeenCalledTimes(4);
+    expect(s.purgeStaleCatalysts).toHaveBeenCalledTimes(5);
+  });
+
+  it("PRESDOCU: raw text without an operative marker -> logged and reported, dates kept estimated", async () => {
+    const logs: string[] = [];
+    const fetchImpl = mockFetch({
+      PRESDOCU: {
+        results: [
+          {
+            title: "Adjusting Imports of Steel Into the United States Under Section 232",
+            type: "Presidential Document",
+            subtype: "Proclamation",
+            effective_on: null,
+            html_url: "https://www.federalregister.gov/d/2026-26301",
+            abstract: "",
+            document_number: "2026-26301",
+            raw_text_url: "https://www.federalregister.gov/documents/full_text/raw/2026-26301.txt",
+          },
+        ],
+        total_pages: 1,
+      },
+      rawText: "Adjusted imports of steel shall apply on or after 12:01 a.m. eastern time on December 4, 2026.",
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, horizonDays: 60, fetch: fetchImpl as unknown as typeof fetch, log: (m) => logs.push(m) });
+    const report = getLastFrSyncReport();
+    expect(report!.noOperativeMarker).toEqual(["2026-26301"]);
+    expect(logs.some((m) => m.includes("2026-26301") && m.includes("no presidential operative marker"))).toBe(true);
+    // classify behavior is unchanged: the text date still yields a row, just estimated-risky → still emitted.
+    expect(catalysts(s).map((r) => r.dateStart)).toEqual(["2026-12-04"]);
   });
 
   it("PRESDOCU: raw-text fetch failing (500) -> no purge, report complete false", async () => {
@@ -663,6 +693,49 @@ describe("curated FR doc number skipping", () => {
     ]);
   });
 
+  it("aborts before any fetch or store write when curated doc numbers are unavailable (fail closed)", async () => {
+    const fetchImpl = mockFetch({});
+    const s = store();
+    await syncFederalRegister(s, {
+      ...opts,
+      fetch: fetchImpl as unknown as typeof fetch,
+      curatedDocNumbersLoader: async () => {
+        throw new Error("curated file unreadable");
+      },
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(s.upsertCatalyst).not.toHaveBeenCalled();
+    expect(s.purgeStaleCatalysts).not.toHaveBeenCalled();
+    expect(s.listStaleCatalysts).not.toHaveBeenCalled();
+    const report = getLastFrSyncReport();
+    expect(report!.complete).toBe(false);
+    expect(report!.curatedError).toContain("curated file unreadable");
+  });
+
+  // The FR doc has two in-window dates (effective Nov 5, in force until Nov 9) that classify would emit as
+  // two rows — but curation skips the whole doc. The curated policy row must cover the dates that matter.
+  it("curated skip is per-doc: a second in-window date in a curated doc is hidden (documented limitation)", async () => {
+    const fetchImpl = mockFetch({
+      [BIS]: {
+        results: [
+          {
+            title: "Rule with two in-window dates",
+            type: "Rule",
+            effective_on: "2026-11-05",
+            html_url: "https://www.federalregister.gov/d/2026-77777",
+            abstract: "This rule is effective November 5, 2026. The rule remains in force until November 9, 2026.",
+            document_number: "2026-77777",
+          },
+        ],
+      },
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch, curatedDocNumbers: new Set(["2026-77777"]) });
+    expect(catalysts(s)).toHaveLength(0);
+    const report = getLastFrSyncReport();
+    expect(report!.skippedCurated).toEqual(["2026-77777"]);
+  });
+
   it("FSLR double count: curated policy row + skipped FR doc -> exactly ONE Dec 4 item for FSLR, no cluster bonus", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "fr-curated-"));
     const file = path.join(dir, "policy-events.json");
@@ -760,7 +833,7 @@ describe("FR result cap, empty-page guard, and bounded retry", () => {
     const s = store();
     await syncFederalRegister(s, { ...opts, sleep: async () => {}, curatedDocNumbers: new Set(), fetch: fetchImpl as unknown as typeof fetch });
     expect(getLastFrSyncReport()!.complete).toBe(true);
-    expect(s.purgeStaleCatalysts).toHaveBeenCalledTimes(4);
+    expect(s.purgeStaleCatalysts).toHaveBeenCalledTimes(5);
   });
 
   it("429 with Retry-After: 2 then 200 -> succeeds, sleep called with 2000 plus politeness delays, 2 fetch calls", async () => {

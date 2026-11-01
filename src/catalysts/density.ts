@@ -12,6 +12,7 @@ export const KIND_WEIGHTS: Record<CatalystKind, 1 | 2 | 3> = {
   litigation: 3,
   patent_decision: 3,
   rule_effective: 3,
+  rule_expiry: 3,
   comment_close: 3, // FR comment rows used to be regulatory_decision (weight 3); keep views identical.
   presidential_action: 3, // FR presidential "in effect" rows (previously absent) treated as market-moving.
   lockup_expiry: 2,

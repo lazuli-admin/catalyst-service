@@ -70,6 +70,39 @@ describe("topic near-misses", () => {
       expect(isRelevant(doc(title)), title).toBe(false);
       expect(topicTags(doc(title)).topics, title).not.toContain("swaps-margining");
     }
+    const clearingAgencyKeeps = [
+      "Notice of Filing of an Application for Registration as a Clearing Agency",
+      "Standards for Covered Clearing Agencies; Proposed Amendments",
+      "Risk Management Standards for Covered Clearing Agencies",
+      "Clearing Agency Registration Rule Amendments",
+    ];
+    for (const title of clearingAgencyKeeps) {
+      expect(isRelevant(doc(title)), title).toBe(true);
+      expect(topicTags(doc(title)).topics, title).toContain("swaps-margining");
+    }
+    const clearingAgencyDrops = [
+      "Self-Regulatory Organizations; Example Exchange; Proposed Rule Change To Require a Letter of Guarantee From a Clearing Firm Under the Rules of a Qualified Clearing Agency",
+      "Self-Regulatory Organizations; Example Clearing Agency; Designation of a Longer Period for Commission Action on Treasury Clearing",
+    ];
+    for (const title of clearingAgencyDrops) {
+      expect(isRelevant(doc(title)), title).toBe(false);
+      expect(topicTags(doc(title)).topics, title).not.toContain("swaps-margining");
+    }
+  });
+
+  it("tariffs 301/232: keeps section 122 trade actions, drops SRO rulebook section 122 references", () => {
+    const keeps = [
+      "Imposing a Temporary Import Surcharge Under Section 122 of the Trade Act of 1974",
+      "Balance-of-Payments Tariffs Under Section 122",
+      "Notice of Tariff Duties Under Section 122",
+    ];
+    for (const title of keeps) {
+      expect(isRelevant(doc(title)), title).toBe(true);
+      expect(topicTags(doc(title)).topics, title).toContain("tariffs-301-232");
+    }
+    const drop = "Self-Regulatory Organizations; Example Exchange; Notice of Filing of a Proposed Rule Change To Amend Equity 7, Section 122 To Remove a Data Product";
+    expect(isRelevant(doc(drop)), drop).toBe(false);
+    expect(topicTags(doc(drop)).topics, drop).not.toContain("tariffs-301-232");
   });
 
   it("trade remedy: keeps AD/CVD determinations, drops administrative review initiations", () => {
