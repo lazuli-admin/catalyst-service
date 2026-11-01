@@ -94,6 +94,36 @@ describe("syncFederalRegister", () => {
     expect(catalysts(s).map((r) => r.title)).toEqual(["Spectrum Sharing in the 6 GHz Band"]);
   });
 
+  it("proposed rule: effective_on becomes the initial comment deadline, no rule_effective row", async () => {
+    const fetchImpl = mockFetch({
+      "federal-communications-commission": {
+        results: [
+          {
+            title: "Spectrum Sharing in the 6 GHz Band",
+            type: "Proposed Rule",
+            effective_on: "2026-11-09",
+            html_url: "u",
+            abstract: "",
+            document_number: "fcc-prop-1",
+            comments_close_on: "2026-12-07",
+          },
+        ],
+      },
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
+    const rows = catalysts(s);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      kind: "regulatory_decision",
+      dateStart: "2026-11-09",
+      dateEnd: "2026-11-09",
+      impactWeight: 1,
+      dedupeKey: "fr:fcc-prop-1:comments:2026-11-09",
+    });
+    expect(rows[0]!.title).toContain("(replies Dec 7)");
+  });
+
   it("dates outside [today, today+horizon] are dropped", async () => {
     const fetchImpl = mockFetch({
       [FTC]: {

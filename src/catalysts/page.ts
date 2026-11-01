@@ -1,5 +1,5 @@
 import { rankCatalysts } from "./ranked.js";
-import { catalystDensity, CLUSTER_SPAN_DAYS, KIND_WEIGHTS, CLUSTER_BONUS_PER_KIND, type TickerDensity } from "./density.js";
+import { catalystDensity, CLUSTER_SPAN_DAYS, KIND_WEIGHTS, CLUSTER_BONUS_PER_KIND, isPolicyCatalyst, type TickerDensity } from "./density.js";
 import { sectorOf } from "./sectors.js";
 import type { Catalyst } from "../types.js";
 
@@ -107,9 +107,11 @@ export function renderCalendarPage(opts: { cats: Catalyst[]; asOf: string; all: 
   // All-or-nothing: any invalid token drops the whole hide param, so bad input renders as no-hide.
   const tokens = (opts.hide ?? "").split(",");
   const hidden = new Set(
-    tokens.every((g) => g === "earnings" || g === "macro" || g === "global") ? (tokens as ("earnings" | "macro" | "global")[]) : [],
+    tokens.every((g) => g === "earnings" || g === "macro" || g === "policy" || g === "global")
+      ? (tokens as ("earnings" | "macro" | "policy" | "global")[])
+      : [],
   );
-  const groupOf = (kind: string) => (kind === "earnings" ? "earnings" : kind === "macro" ? "macro" : "global");
+  const groupOf = (c: Catalyst) => (isPolicyCatalyst(c) ? "policy" : c.kind === "earnings" ? "earnings" : c.kind === "macro" ? "macro" : "global");
   const week = weekSunday(opts.week && isDate(opts.week) ? opts.week : opts.asOf);
   const days = Array.from({ length: 7 }, (_, i) => new Date(Date.parse(`${week}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10));
   const ranked = rankCatalysts(opts.cats, { asOf: opts.asOf, all: opts.all }).filter((r) => r.dateEnd >= (days[0] ?? "") && r.dateStart <= (days[6] ?? ""));
@@ -164,7 +166,7 @@ export function renderCalendarPage(opts: { cats: Catalyst[]; asOf: string; all: 
     const shown: string[] = [];
     const collapsed: Ranked[] = [];
     for (const r of items) {
-      if (hidden.has(groupOf(r.kind))) continue;
+      if (hidden.has(groupOf(r))) continue;
       if (r.kind === "earnings" && !r.focus && !r.themes.includes("megacap")) collapsed.push(r);
       else shown.push(chip(r, opts.asOf));
     }
@@ -184,7 +186,7 @@ export function renderCalendarPage(opts: { cats: Catalyst[]; asOf: string; all: 
   const keep = { all: opts.all, hide: [...hidden] };
   const prev = new Date(Date.parse(`${week}T00:00:00Z`) - 7 * 86_400_000).toISOString().slice(0, 10);
   const next = new Date(Date.parse(`${week}T00:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10);
-  const pills = (["earnings", "macro", "global"] as const)
+  const pills = (["earnings", "macro", "policy", "global"] as const)
     .map((g) => {
       const on = !hidden.has(g);
       const hideNext = on ? [...hidden, g] : [...hidden].filter((x) => x !== g);

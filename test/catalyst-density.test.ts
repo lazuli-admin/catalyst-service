@@ -131,6 +131,26 @@ describe("catalystDensity", () => {
     expect(nvda.clusters[0]!.kinds).toEqual(["earnings", "deal_close"]);
   });
 
+  it("never clusters policy events with non-policy events", () => {
+    const earnings = cat({ kind: "earnings", title: "E", dateStart: "2026-03-10" });
+    const policy = cat({ kind: "rule_effective", title: "Rule effective", dedupeKey: "policy:rule-1", dateStart: "2026-03-12" });
+    const nvda = catalystDensity([earnings, policy], { asOf: TODAY }).find((r) => r.ticker === "NVDA")!;
+    expect(nvda.score).toBeCloseTo(3 + 3); // no cluster bonus across the policy/non-policy boundary
+    expect(nvda.clusters).toHaveLength(0);
+  });
+
+  it("clusters policy events with each other and keeps entry.clusters sorted by start", () => {
+    const earnings = cat({ kind: "earnings", title: "E", dateStart: "2026-03-10" });
+    const deal = cat({ kind: "deal_close", title: "D", dateStart: "2026-03-11" });
+    const policyRule = cat({ kind: "rule_effective", title: "Rule effective", dedupeKey: "policy:rule-1", dateStart: "2026-03-12" });
+    const frDecision = cat({ kind: "regulatory_decision", title: "FR decision", dedupeKey: "fr:decision-1", dateStart: "2026-03-12" });
+    const nvda = catalystDensity([earnings, deal, policyRule, frDecision], { asOf: TODAY }).find((r) => r.ticker === "NVDA")!;
+    expect(nvda.clusters).toHaveLength(2);
+    expect(nvda.clusters[0]!.kinds).toEqual(["earnings", "deal_close"]); // starts 2026-03-10
+    expect(nvda.clusters[1]!.kinds).toEqual(["rule_effective", "regulatory_decision"]); // starts 2026-03-12
+    expect(nvda.score).toBeCloseTo(3 + 3 + 1.5 + 3 + 3 + 1.5); // one bonus per group
+  });
+
   it("excludes leads, cancelled, done, and past catalysts", () => {
     const rows = catalystDensity([
       cat({ status: "lead" }),
