@@ -68,6 +68,8 @@ export interface TextDate {
   role: DateRole;
   raw: string;
   vague?: boolean;
+  /** Clause was a bare "until <date>" with no clock time — weaker evidence of the exact day. */
+  bareUntil?: true;
 }
 
 /** Time-clause dates ("12:01 a.m. … on <date>", "through 11:59 p.m. … <date>") in prose text.
@@ -93,7 +95,9 @@ const MONTH_FULL_RE = new RegExp(MONTH_FULL, "g");
 const ROLE_END_OF_DAY_RE = new RegExp(String.raw`\b(?:through|until)\s+11:59\s*p\.m\. [a-z ]{0,60}?(?:on\s+)?(${MONTH_FULL})\b`, "gi");
 /** "stayed until <date>", "suspended … until|through <date>" (no clock time), or "the suspension
  *  (is/will be) (set to) end(s)/expire(s)/terminate(s) <date>" — the stay covers the date, back in force the NEXT day. */
-const ROLE_SUSPENSION_RE = new RegExp(String.raw`\b(?:stayed\s+until|suspended\s+.{0,120}?\b(?:until|through)|suspension\s+(?:is\s+|will\s+)?(?:set\s+to\s+)?(?:ends?|expires?|terminates?))\s+(?!\d{1,2}:\d{2})(${MONTH_FULL})\b`, "gi");
+const ROLE_SUSPENSION_RE = new RegExp(String.raw`\b(?:stayed\s+until|suspended\s+.{0,120}?\b(?:until|through)|suspension\s+(?:is\s+|will\s+)?(?:set\s+to\s+)?(?:ends?|expires?|terminates?)|suspension\s+(?:shall\s+|will\s+)?remains?(?:\s+in\s+(?:effect|force|place))?\s+until)\s+(?!\d{1,2}:\d{2})(${MONTH_FULL})\b`, "gi");
+/** "suspended/stayed until 12:01 a.m. <tz> on <date>" — start-of-day: the stay lifts ON the date itself. */
+const ROLE_SUSPENSION_SOD_RE = new RegExp(String.raw`\b(?:suspended|stayed)\s+[^.;]{0,120}?\buntil\s+12:01\s*a\.m\. [a-z ]{0,60}?(?:on\s+)?(${MONTH_FULL})\b`, "gi");
 /** Expiry clauses — the date is the FIRST DAY NOT IN FORCE. "expires [on] <date>", "effective [A,]
  *  until|through <date>", "in (effect|force) until|through <date>" cover the date itself, so the rule
  *  lapses the NEXT day — except start-of-day clauses ("expires at 12:01 a.m. … on <date>", "until
@@ -102,7 +106,7 @@ const ROLE_SUSPENSION_RE = new RegExp(String.raw`\b(?:stayed\s+until|suspended\s
 const ROLE_EXPIRY_RE = new RegExp(
   String.raw`\b(?:(?:expires?\s+at|until|through)\s+12:01\s*a\.m\. [a-z ]{0,60}?(?:on\s+)?` +
     String.raw`|expires?\s+(?:on\s+)?(?!\s*\d{1,2}:\d{2})` +
-    String.raw`|(?:effective(?:\s+on)?\s+[^.;]{0,120}?|remains?\s+in\s+(?:effect|force)\s+|in\s+(?:effect|force)\s+)(?:until|through)\s+(?!\s*\d{1,2}:\d{2}))` +
+    String.raw`|(?:effective(?:\s+on)?\s+[^.;]{0,120}?|remains?\s+(?:in\s+(?:effect|force)\s+)?|in\s+(?:effect|force)\s+)(?:until|through)\s+(?!\s*\d{1,2}:\d{2}))` +
     String.raw`(${MONTH_FULL})\b`,
   "gi",
 );
@@ -114,6 +118,7 @@ export const PRESIDENTIAL_OPERATIVE_MARKERS: RegExp[] = [
   /proclaim\s+as\s+follows/i,
   /(?:it\s+is\s+)?hereby\s+(?:determine\s+and\s+)?order(?:ed)?\b/i,
   /\bI\s+hereby\s+direct\b/i,
+  /\bI\s+hereby\s+determine\b/i,
   /\bSec\.\s+1\./i,
   /\bSection\s+1\./i,
 ];
@@ -154,28 +159,39 @@ export function roleDates(text: string): TextDate[] {
   for (const sentence of norm.split(/(?<!\b[ap]\.m\.)(?<!\bSec\.)(?<!\bU\.S\.)(?<!\bNo\.)(?<=[.;])\s+/)) {
     if (/\bcomments?\b/i.test(sentence)) continue; // comment deadlines are not the doc's own effective role
     const vagueSentence = /within\s+\d+\s+days|\d+\s+days\s+(?:from|after)/i.test(sentence);
-    const push = (m: RegExpMatchArray, role: DateRole, date: string): void => {
+    const sent: TextDate[] = [];
+    const push = (m: RegExpMatchArray, role: DateRole, date: string, bareUntil?: boolean): void => {
       const idx = m.index! + m[0].indexOf(m[1]!);
       const vague = vagueSentence || /on\s+or\s+about|approximately/i.test(sentence.slice(Math.max(0, idx - 60), idx));
-      out.push({ date, role, raw: m[0], ...(vague ? { vague: true } : {}) });
+      sent.push({ date, role, raw: m[0], ...(vague ? { vague: true } : {}), ...(bareUntil ? { bareUntil: true } : {}) });
     };
+    const untilFlag = (m: RegExpMatchArray): boolean | undefined => (/\buntil\b/i.test(m[0]) ? true : undefined);
     for (const m of sentence.matchAll(ROLE_END_OF_DAY_RE)) {
       const base = toIso(m[1]!);
       if (base) push(m, "effective", nextDay(base));
     }
     for (const m of sentence.matchAll(ROLE_SUSPENSION_RE)) {
       const base = toIso(m[1]!);
-      if (base) push(m, "suspension_end", nextDay(base));
+      if (base) push(m, "suspension_end", nextDay(base), untilFlag(m));
+    }
+    for (const m of sentence.matchAll(ROLE_SUSPENSION_SOD_RE)) {
+      const base = toIso(m[1]!);
+      if (base) push(m, "suspension_end", base); // start-of-day: suspension ends ON the date
     }
     for (const m of sentence.matchAll(ROLE_EFFECTIVE_RE)) {
       const date = toIso(m[1]!);
       if (date) push(m, "effective", date);
     }
-    for (const m of sentence.matchAll(ROLE_EXPIRY_RE)) {
-      const base = toIso(m[1]!);
-      // start-of-day clauses (12:01 a.m.) lapse the date itself; bare/until/through clauses the next day.
-      if (base) push(m, "expiry", /12:01/.test(m[0]) ? base : nextDay(base));
+    // Suspension wording overrides expiry in the same sentence ("suspended until X" is not an expiry).
+    if (!/\b(?:suspended|stayed|suspension)\b/i.test(sentence)) {
+      for (const m of sentence.matchAll(ROLE_EXPIRY_RE)) {
+        const base = toIso(m[1]!);
+        // start-of-day clauses (12:01 a.m.) lapse the date itself; bare/until/through clauses the next day.
+        if (base) push(m, "expiry", /12:01/.test(m[0]) ? base : nextDay(base), untilFlag(m) && !/12:01/.test(m[0]) ? true : undefined);
+      }
     }
+    // A sentence that yielded a suspension_end keeps only those (drops the 12:01 effective from the same clause).
+    out.push(...(sent.some((p) => p.role === "suspension_end") ? sent.filter((p) => p.role === "suspension_end") : sent));
   }
   return out;
 }
@@ -197,11 +213,16 @@ export function classify(doc: FrApiDoc, window: { today: string; end: string }):
   // Operative dates win: preamble dates are only used when the operative text has NO role dates at all
   // (in or out of window) — otherwise quoting another document's date in the abstract would leak a row.
   const cands = opAll.length > 0 ? opCands : preCands;
+  // A bare "until <date>" clause alone is weak evidence: exact only when a non-bare clause
+  // (operative or preamble) pins the same date.
+  const corroborated = (list: TextDate[]): boolean =>
+    list.every((p) => !p.bareUntil || list.some((q) => q.date === p.date && !q.bareUntil));
+  const bareOk = corroborated([...opAll, ...preCands]);
 
   if (doc.type === "Presidential Document") {
     // Presidential: "in effect" dates come from role-word clauses in the text, not the API.
     const subtypeLabel = doc.subtype || "Presidential document";
-    const exact = opCands.length > 0 && new Set(cands.map((p) => p.date)).size === 1 && !cands.some((p) => p.vague);
+    const exact = opCands.length > 0 && new Set(cands.map((p) => p.date)).size === 1 && !cands.some((p) => p.vague) && bareOk;
     for (const date of new Set(cands.map((p) => p.date))) {
       add({
         dedupeKey: `fr:${doc.document_number}:${date}`,
@@ -259,7 +280,7 @@ export function classify(doc: FrApiDoc, window: { today: string; end: string }):
     // proposed rules never emit rule_effective. One row per distinct date.
     if (doc.type !== "Proposed Rule" && cands.length > 0) {
       const distinct = [...new Set(cands.map((p) => p.date))];
-      const exact = opCands.length > 0 && distinct.length === 1 && !cands.some((p) => p.vague);
+      const exact = opCands.length > 0 && distinct.length === 1 && !cands.some((p) => p.vague) && bareOk;
       for (const date of distinct) {
         const susp = cands.find((p) => p.date === date && p.role === "suspension_end");
         if (susp && /^(request for comments|applications for)/i.test(doc.title)) continue;

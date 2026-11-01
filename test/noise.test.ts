@@ -305,6 +305,14 @@ describe("other noise patterns", () => {
     expect(isNoise({ title: keep })).toBe(false);
   });
 
+  it("drops annual continuation-of-national-emergency notices, keeps declaring/expanding national emergencies", () => {
+    expect(isNoise({ title: "Continuation of the National Emergency With Respect to Example Country" })).toBe(true);
+    const keep1 = "Declaring a National Emergency With Respect to Example Imports";
+    expect(isNoise({ title: keep1 })).toBe(false);
+    const keep2 = "Expanding the Scope of the National Emergency With Respect to Example Country";
+    expect(isNoise({ title: keep2 })).toBe(false);
+  });
+
   it("drops FTA textile short-supply / commercial-availability notices, keeps USMCA automotive reports", () => {
     expect(isNoise({ title: "Determination Under the Textile and Apparel Commercial Availability Provision of the Dominican Republic-Central America-United States Free Trade Agreement" })).toBe(true);
     expect(isNoise({ title: "Additions to the Short Supply List Under the CAFTA-DR" })).toBe(true);
@@ -316,7 +324,7 @@ describe("other noise patterns", () => {
 
 describe("noise pattern coverage", () => {
   it("covers every NOISE_PATTERNS entry (add a test when adding a pattern)", () => {
-    expect(NOISE_PATTERNS.length).toBe(18);
+    expect(NOISE_PATTERNS.length).toBe(19);
   });
 
   it("AD_CVD_RE is the first noise pattern (Section 232 override depends on identity)", () => {
