@@ -27,10 +27,23 @@ const regression = JSON.parse(
 const SEC_SRO_MISS =
   "SEC SRO filing, fetched; matches no topic after the narrow SRO procedural noise rule (known miss, not pattern-fit)";
 
+const PRESIDENTIAL_KEEP_DEFAULT_MISS =
+  "presidential keep-by-default: now relevant without a topic match; fixture label predates the rule (known FP)";
+
 const KNOWN_MISSES: Record<string, string> = {
   "2025-19818":
     "USMCA Labor Council meeting notice: matches USMCA topic; meeting notices are not filtered as noise yet (known FP)",
   "2025-23937": SEC_SRO_MISS,
+  // presidential documents flipped relevant by keep-by-default (no topic required, not ceremonial)
+  "2026-02292": PRESIDENTIAL_KEEP_DEFAULT_MISS,
+  "2026-02248": PRESIDENTIAL_KEEP_DEFAULT_MISS,
+  "2026-02249": PRESIDENTIAL_KEEP_DEFAULT_MISS,
+  "2026-07724": PRESIDENTIAL_KEEP_DEFAULT_MISS,
+  "2026-13408": PRESIDENTIAL_KEEP_DEFAULT_MISS,
+  "2026-15357": PRESIDENTIAL_KEEP_DEFAULT_MISS,
+  "2026-18141": PRESIDENTIAL_KEEP_DEFAULT_MISS,
+  "2026-20320": PRESIDENTIAL_KEEP_DEFAULT_MISS,
+  "2026-21666": PRESIDENTIAL_KEEP_DEFAULT_MISS,
 };
 
 describe("fr-blind regression gates", () => {
