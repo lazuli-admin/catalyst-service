@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { buildServer } from "../src/server.js";
+import { createSyncLock } from "../src/lock.js";
+import { buildServer, isLoopbackHost } from "../src/server.js";
 import { deps, memoryStore } from "./helpers.js";
 
 let app: Awaited<ReturnType<typeof buildServer>>;
@@ -77,5 +78,85 @@ describe("production requires CATALYST_API_KEY", () => {
     const prod = buildServer(store, deps(store));
     await prod.ready();
     await prod.close();
+  });
+});
+
+describe("host key requirement and lock integration", () => {
+  const originalEnv = process.env.NODE_ENV;
+  const originalKey = process.env.CATALYST_API_KEY;
+
+  afterEach(() => {
+    process.env.NODE_ENV = originalEnv;
+    if (originalKey === undefined) delete process.env.CATALYST_API_KEY;
+    else process.env.CATALYST_API_KEY = originalKey;
+  });
+
+  it("throws without a key on a non-loopback host", async () => {
+    process.env.NODE_ENV = originalEnv;
+    delete process.env.CATALYST_API_KEY;
+    const store = await memoryStore();
+    expect(() => buildServer(store, deps(store), { host: "0.0.0.0" })).toThrow(
+      "CATALYST_API_KEY must be set in production or when listening on a non-loopback host",
+    );
+  });
+
+  it.each(["127.0.0.1", "::1", "localhost"])("does not throw for loopback host %s without a key", async (host) => {
+    process.env.NODE_ENV = originalEnv;
+    delete process.env.CATALYST_API_KEY;
+    const store = await memoryStore();
+    const app = buildServer(store, deps(store), { host });
+    await app.ready();
+    await app.close();
+  });
+
+  it("classifies loopback hosts", () => {
+    expect(isLoopbackHost("127.0.0.1")).toBe(true);
+    expect(isLoopbackHost("::1")).toBe(true);
+    expect(isLoopbackHost("localhost")).toBe(true);
+    expect(isLoopbackHost("  LocalHost  ")).toBe(true);
+    expect(isLoopbackHost("0.0.0.0")).toBe(false);
+    expect(isLoopbackHost("example.com")).toBe(false);
+    expect(isLoopbackHost("::")).toBe(false);
+    expect(isLoopbackHost("")).toBe(false);
+  });
+
+  it("reports lock skips in /health", async () => {
+    const store = await memoryStore();
+    const lock = createSyncLock();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const held = lock.run("source-poll", () => gate);
+    await lock.run("source-poll", async () => "skipped");
+    const app = buildServer(store, deps(store), { lock });
+    await app.ready();
+    const res = await app.inject({ method: "GET", url: "/health" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { ok: boolean; locks: Record<string, { skips: number; lastSkipAt: string | null }> };
+    expect(body.ok).toBe(true);
+    expect(body.locks["source-poll"]!.skips).toBe(1);
+    release();
+    await held;
+    await app.close();
+  });
+
+  it("returns 409 when the source-poll lock is held", async () => {
+    const store = await memoryStore();
+    const source = await store.createSource({ type: "push", name: "held-source", config: {} });
+    const lock = createSyncLock();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const held = lock.run("source-poll", () => gate);
+    const app = buildServer(store, deps(store), { lock });
+    await app.ready();
+    const res = await app.inject({
+      method: "POST",
+      url: `/sources/${source.id}/run`,
+      headers: { "x-api-key": process.env.CATALYST_API_KEY ?? KEY },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: "source_poll_running" });
+    await app.close();
+    release();
+    await held;
   });
 });

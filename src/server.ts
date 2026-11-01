@@ -6,6 +6,7 @@ import { rankCatalysts } from "./catalysts/ranked.js";
 import { isDate, renderCalendarPage, weekSunday } from "./catalysts/page.js";
 import { addDays, marketToday, systemClock } from "./clock.js";
 import type { Store } from "./db.js";
+import { createSyncLock, type SyncLock } from "./lock.js";
 import { processItems, runSource, type PipelineDeps } from "./pipeline.js";
 import { listAdapters, parseSourceConfig } from "./sources/registry.js";
 import { EFFECTS, type Effect } from "./types.js";
@@ -79,13 +80,20 @@ export function safeEqual(a: string | undefined, b: string): boolean {
   return timingSafeEqual(ab, bb);
 }
 
-export function buildServer(store: Store, deps: PipelineDeps): FastifyInstance {
+export function isLoopbackHost(host: string): boolean {
+  const h = host.trim().toLowerCase();
+  return h === "127.0.0.1" || h === "::1" || h === "localhost";
+}
+
+export function buildServer(store: Store, deps: PipelineDeps, opts: { lock?: SyncLock; host?: string } = {}): FastifyInstance {
   const clock = deps.clock ?? systemClock;
+  const lock = opts.lock ?? createSyncLock();
   const app = Fastify({ logger: false });
 
   // When CATALYST_API_KEY is set, only mutating methods require the x-api-key header (GET/HEAD are public).
   const apiKey = process.env.CATALYST_API_KEY?.trim();
-  if (process.env.NODE_ENV === "production" && !apiKey) throw new Error("CATALYST_API_KEY must be set in production");
+  if (!apiKey && (process.env.NODE_ENV === "production" || (opts.host !== undefined && !isLoopbackHost(opts.host))))
+    throw new Error("CATALYST_API_KEY must be set in production or when listening on a non-loopback host");
   if (apiKey) {
     app.addHook("onRequest", async (req, reply) => {
       if (req.method === "GET" || req.method === "HEAD") return;
@@ -101,7 +109,7 @@ export function buildServer(store: Store, deps: PipelineDeps): FastifyInstance {
 
   const notFound = { error: "not_found" };
 
-  app.get("/health", async () => ({ ok: true }));
+  app.get("/health", async () => ({ ok: true, locks: lock.stats() }));
   app.get("/source-types", async () => listAdapters());
 
   app.get("/themes", async () => store.listThemes());
@@ -150,7 +158,10 @@ export function buildServer(store: Store, deps: PipelineDeps): FastifyInstance {
   );
   app.post("/sources/:id/run", async (req, reply) => {
     const source = await store.getSource(IdParam.parse(req.params).id);
-    return source ? runSource(deps, source) : reply.status(404).send(notFound);
+    if (!source) return reply.status(404).send(notFound);
+    if (lock.isRunning("source-poll")) return reply.status(409).send({ error: "source_poll_running" });
+    const result = await lock.run("source-poll", () => runSource(deps, source));
+    return result === undefined ? reply.status(409).send({ error: "source_poll_running" }) : result;
   });
 
   app.post("/ingest", async (req) => {
