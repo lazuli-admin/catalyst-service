@@ -262,6 +262,18 @@ describe("fr-classify synthetic", () => {
     ]);
   });
 
+  it("roleDates: 'suspended until 12:01 a.m. … on <date>' yields only suspension_end", () => {
+    const rows = roleDates("The tariffs remain suspended until 12:01 a.m. eastern standard time on December 3, 2026.");
+    expect(rows.map((r) => [r.role, r.date])).toEqual([["suspension_end", "2026-12-03"]]);
+  });
+
+  it("roleDates: suspension wording suppresses expiry in the same sentence", () => {
+    const rows = roleDates("The suspension of the additional duties is effective through December 3, 2026.");
+    expect(rows.some((r) => r.role === "expiry")).toBe(false);
+    const contrast = roleDates("The additional duties are effective through December 3, 2026.");
+    expect(contrast.map((r) => [r.role, r.date])).toEqual([["expiry", "2026-12-04"]]);
+  });
+
   it('rule "The exemption expires December 3, 2026." → rule_expiry 2026-12-04 (first day not in force)', () => {
     const rows = classify(base({ dates: "The exemption expires December 3, 2026." }), WINDOW);
     expect(rows).toHaveLength(1);
