@@ -40,7 +40,7 @@ async function fetchJson(url: string, fetchImpl: typeof fetch): Promise<unknown>
 }
 
 export async function syncCalendars(
-  store: Pick<Store, "upsertCatalyst" | "purgeLegacyMacro">,
+  store: Pick<Store, "upsertCatalyst" | "purgeLegacyMacro" | "purgeStaleCatalysts">,
   opts: { from: string; days: number; watchlist: string[]; minMarketCap: number; fetch?: typeof fetch; log?: (m: string) => void },
 ): Promise<{ earnings: number; macro: number }> {
   const fetchImpl = opts.fetch ?? fetch;

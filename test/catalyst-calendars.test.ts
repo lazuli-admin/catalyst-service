@@ -17,6 +17,7 @@ function mockFetch(earnings: unknown) {
 const store = () => ({
   upsertCatalyst: vi.fn(async (c: unknown) => ({ ...(c as object) } as Catalyst)),
   purgeLegacyMacro: vi.fn(async () => {}),
+  purgeStaleCatalysts: vi.fn(async () => 0),
 });
 
 const opts = { from: "2026-02-12", days: 5, watchlist: ["smol"], minMarketCap: 50e9 };
@@ -52,14 +53,14 @@ describe("syncCalendars", () => {
   });
 
   it("purges legacy macro rows once and syncs primary macro into the horizon", async () => {
-    const fomc = `<h5>2026 FOMC Meetings</h5><div class="fomc-meeting"><div class="fomc-meeting__month"><strong>February</strong></div><div class="fomc-meeting__date"><p>17-18</p></div></div>`;
+    const fomc = `<h5>2026 FOMC Meetings</h5><div class="fomc-meeting"><div class="fomc-meeting__month"><strong>February</strong></div><div class="fomc-meeting__date"><p>16-17</p></div></div>`;
     const fetchImpl = vi.fn(async (url: string) => (url.startsWith(EARNINGS_URL) ? res({ data: { rows: null } }) : url === FOMC_URL ? res(fomc) : res({})));
     const s = store();
     const counts = await syncCalendars(s as never, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
     expect(s.purgeLegacyMacro).toHaveBeenCalledTimes(1);
     expect(counts).toEqual({ earnings: 0, macro: 1 });
     const macro = s.upsertCatalyst.mock.calls.map(([c]) => c as Catalyst & { dedupeKey: string }).filter((c) => c.kind === "macro");
-    expect(macro).toEqual([expect.objectContaining({ title: "FOMC meeting (rate decision day 2)", dateStart: "2026-02-17", dateEnd: "2026-02-18", dedupeKey: "fed:fomc:2026-02-17", confidence: 1, sourceTier: 1 })]);
+    expect(macro).toEqual([expect.objectContaining({ title: "FOMC rate decision (meeting Feb 16–Feb 17)", dateStart: "2026-02-17", dateEnd: "2026-02-17", dedupeKey: "fed:fomc:2026-02-16", confidence: 1, sourceTier: 1 })]);
   });
 
   it("tags megacap theme at the 200e9 boundary", async () => {

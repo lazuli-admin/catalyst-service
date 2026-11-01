@@ -922,6 +922,14 @@ export class Store {
     );
   }
 
+  /** Delete catalysts of a kind whose updated_at predates the given run; returns rows affected. */
+  async purgeStaleCatalysts(kind: string, from: string, before: string, keyPrefix: string): Promise<number> {
+    return await this.run(
+      "DELETE FROM catalysts WHERE kind = ? AND date_start >= ? AND updated_at < ? AND dedupe_key LIKE ?",
+      [kind, from, before, keyPrefix + "%"],
+    );
+  }
+
   /** Insert or update by dedupeKey; id and createdAt are kept on conflict. */
   async upsertCatalyst(c: CatalystInput): Promise<Catalyst> {
     const updatedAt = nowIso();

@@ -61,11 +61,13 @@ async function fetchJson(url: string, fetchImpl: typeof fetch): Promise<unknown>
 }
 
 export async function syncFederalRegister(
-  store: Pick<Store, "upsertCatalyst">,
+  store: Pick<Store, "upsertCatalyst" | "purgeStaleCatalysts">,
   opts: { today: string; horizonDays: number; fetch?: typeof fetch; log?: (m: string) => void },
 ): Promise<void> {
   const fetchImpl = opts.fetch ?? fetch;
   const log = opts.log ?? (() => {});
+  const runStart = new Date().toISOString();
+  let allAgenciesOk = true;
   const end = horizonEnd(opts.today, opts.horizonDays);
   const gte = new Date(Date.parse(`${opts.today}T00:00:00Z`) - 400 * 86_400_000).toISOString().slice(0, 10);
   const fields = ["title", "effective_on", "publication_date", "html_url", "abstract", "document_number"]
@@ -122,9 +124,12 @@ export async function syncFederalRegister(
         }
       }
     } catch (err) {
+      allAgenciesOk = false;
       log(`federal register ${slug} failed: ${errorMessage(err)}`);
     }
   }
+  // Only delete rows the current code would have refreshed; a partial run must not wipe fresh-looking old rows.
+  if (allAgenciesOk) await store.purgeStaleCatalysts("rule_effective", opts.today, runStart, "fr:");
 }
 
 export async function syncElections(
