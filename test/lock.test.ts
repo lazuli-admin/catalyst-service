@@ -70,10 +70,45 @@ describe("createSyncLock", () => {
     expect(stats["a"]!.skips).toBe(2);
     expect(stats["a"]!.lastSkipAt).toEqual(expect.any(String));
     expect(new Date(stats["a"]!.lastSkipAt!).getTime()).not.toBeNaN();
-    expect(stats["b"]).toBeUndefined();
+    expect(stats["b"]!.skips).toBe(0);
+    expect(stats["b"]!.held).toBe(false);
 
     release();
     await first;
     expect(lock.stats()["a"]!.skips).toBe(2);
+  });
+
+  it("stats() tracks held, lastRunAt and lastDurationMs per name", async () => {
+    const lock = createSyncLock();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const first = lock.run("sync", () => gate);
+
+    const during = lock.stats()["sync"]!;
+    expect(during.held).toBe(true);
+    expect(during.lastRunAt).toEqual(expect.any(String));
+
+    lock.recordSkip("sync");
+    expect(lock.stats()["sync"]!.skips).toBe(1);
+
+    release();
+    await first;
+    const after = lock.stats()["sync"]!;
+    expect(after.held).toBe(false);
+    expect(after.lastRunAt).toEqual(expect.any(String));
+    expect(typeof after.lastDurationMs).toBe("number");
+    expect(after.lastDurationMs!).toBeGreaterThanOrEqual(0);
+  });
+
+  it("a destructured run still skips a concurrent run of the same name", async () => {
+    const lock = createSyncLock();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const run = lock.run;
+    const first = run("sync", () => gate);
+    expect(await run("sync", async () => "skipped")).toBeUndefined();
+    release();
+    await first;
+    expect(lock.stats()["sync"]!.skips).toBe(1);
   });
 });

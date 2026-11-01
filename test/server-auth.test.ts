@@ -159,4 +159,49 @@ describe("host key requirement and lock integration", () => {
     release();
     await held;
   });
+
+  it("manual run goes through the lock", async () => {
+    const store = await memoryStore();
+    const source = await store.createSource({ type: "push", name: "manual-source", config: {} });
+    const lock = createSyncLock();
+    const app = buildServer(store, deps(store), { lock });
+    await app.ready();
+    const res = await app.inject({
+      method: "POST",
+      url: `/sources/${source.id}/run`,
+      headers: { "x-api-key": process.env.CATALYST_API_KEY ?? KEY },
+    });
+    expect(res.statusCode).not.toBe(409);
+    expect(res.statusCode).not.toBe(404);
+    const stats = lock.stats()["source-poll"]!;
+    expect(typeof stats.lastRunAt).toBe("string");
+    expect(stats.lastRunAt).not.toBeNull();
+    expect(typeof stats.lastDurationMs).toBe("number");
+    await app.close();
+  });
+
+  it("counts early 409s as skips and reports them in /health", async () => {
+    const store = await memoryStore();
+    const source = await store.createSource({ type: "push", name: "skip-source", config: {} });
+    const lock = createSyncLock();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const held = lock.run("source-poll", () => gate);
+    const app = buildServer(store, deps(store), { lock });
+    await app.ready();
+    const headers = { "x-api-key": process.env.CATALYST_API_KEY ?? KEY };
+    expect((await app.inject({ method: "POST", url: `/sources/${source.id}/run`, headers })).statusCode).toBe(409);
+    expect((await app.inject({ method: "POST", url: `/sources/${source.id}/run`, headers })).statusCode).toBe(409);
+    expect(lock.stats()["source-poll"]!.skips).toBe(2);
+    expect(lock.stats()["source-poll"]!.held).toBe(true);
+    release();
+    await held;
+    const body = (await app.inject({ method: "GET", url: "/health" })).json() as {
+      locks: Record<string, { held: boolean; lastRunAt: string | null; lastDurationMs: number | null }>;
+    };
+    expect(body.locks["source-poll"]!.held).toBe(false);
+    expect(body.locks["source-poll"]!.lastRunAt).not.toBeNull();
+    expect(typeof body.locks["source-poll"]!.lastDurationMs).toBe("number");
+    await app.close();
+  });
 });

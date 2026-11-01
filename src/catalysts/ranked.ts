@@ -11,7 +11,7 @@ export interface RankedCatalyst extends Catalyst {
   impliedMove?: number;
 }
 
-/** Focus tickers: names we always want promoted, boosted 2x. */
+/** Focus tickers: names we always want promoted; earnings of these names are boosted 1.5x. */
 export const FOCUS_WATCHLIST = ["NVDA", "AMD", "AVGO", "MSFT", "GOOGL", "AMZN", "META", "AAPL", "AMAT", "LRCX", "KLAC", "APP", "RDDT", "HUBS", "NOW", "TWLO", "DOCN", "ORCL", "MRVL", "LITE", "HOOD"];
 
 /** Same precision bar as density: exact dates or windows of <=10 trading days. */
@@ -34,24 +34,20 @@ export function normalizeCompany(title: string): string {
   return (base.length ? base : words).join(" ");
 }
 
+/** Focus boost applied to earnings of watchlist names. */
+export const FOCUS_MULTIPLIER = 1.5;
+
 /** Score and bucket catalysts for a ranked default view. Pure. */
 export function rankCatalysts(cats: Catalyst[], opts: { asOf: string; all?: boolean; watchlist?: string[]; impliedMove?: Record<string, number> }): RankedCatalyst[] {
   const watch = new Set((opts.watchlist ?? FOCUS_WATCHLIST).map((s) => s.toUpperCase()));
   const ranked = cats
-    .filter((c) => {
-      if (opts.all) return true;
-      // Default view: score-gated upcoming events.
-      if (c.status === "lead" || c.status === "cancelled" || c.status === "done") return false;
-      if (Date.parse(c.dateEnd) < Date.parse(opts.asOf)) return false;
-      return scoreEvent(c) >= DEFAULT_VIEW_MIN_SCORE;
-    })
     .map((c) => {
       const bucket = leadBucket(c.dateStart, opts.asOf);
-      const focus = (c.ticker !== null && watch.has(c.ticker)) || c.affectedTickers.some((t) => watch.has(t));
+      const focus = c.kind === "earnings" && ((c.ticker !== null && watch.has(c.ticker)) || c.affectedTickers.some((t) => watch.has(t)));
       const im = c.kind === "earnings" ? opts.impliedMove?.[c.ticker ?? ""] : undefined;
       // Lead-time multiplier removed (badges dropped as unverifiable).
       let score = scoreEvent(c);
-      if (focus) score *= 2;
+      if (focus) score *= FOCUS_MULTIPLIER;
       if (im != null) score *= Math.min(3, Math.max(0.5, im / 0.05));
       return {
         ...c,
@@ -62,6 +58,13 @@ export function rankCatalysts(cats: Catalyst[], opts: { asOf: string; all?: bool
         ...(focus ? { focus: true } : {}),
         ...(im != null ? { impliedMove: im } : {}),
       };
+    })
+    .filter((c) => {
+      if (opts.all) return true;
+      // Default view: score-gated upcoming events (score includes the focus boost).
+      if (c.status === "lead" || c.status === "cancelled" || c.status === "done") return false;
+      if (Date.parse(c.dateEnd) < Date.parse(opts.asOf)) return false;
+      return c.score >= DEFAULT_VIEW_MIN_SCORE;
     });
   // Class shares (BRK.A/BRK.B, FOXA/FOX, NWSA/NWS...) collapse to one earnings row per date+company, keeping the higher score (ties: alphabetically last ticker).
   const best = new Map<string, RankedCatalyst>();

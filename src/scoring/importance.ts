@@ -4,6 +4,9 @@
 //
 // The IMPORTANCE table below is the single source of truth for per-class weights;
 // no kind-tier table, pinned list, or impactWeight override participates anymore.
+// Focus boost: earnings of watchlist names are boosted x1.5 (FOCUS_MULTIPLIER), applied in
+// catalysts/ranked.ts after scoreEvent — not part of the table or the functions here.
+// Default view: only catalysts scoring >= DEFAULT_VIEW_MIN_SCORE (4.0) are shown.
 // All functions are pure: no I/O, no clock, no randomness.
 
 import type { Catalyst } from "../types.js";
@@ -18,6 +21,7 @@ export type EventClass =
   | "jolts"
   | "retail_sales"
   | "jobless_claims"
+  | "central_bank_other"
   | "macro_other"
   | "election_federal"
   | "election_other"
@@ -28,7 +32,6 @@ export type EventClass =
   | "policy_other"
   | "earnings_mega"
   | "earnings_large"
-  | "earnings_small"
   | "corporate_major"
   | "corporate_minor"
   | "other";
@@ -37,6 +40,8 @@ export type EventClass =
 export const IMPORTANCE: Record<EventClass, number> = {
   // Macro releases
   fomc: 10,
+  // Non-US central bank policy decisions (ECB/BoJ/BoE/BoC/SNB/RBA etc.); moves global rates but less than FOMC.
+  central_bank_other: 4,
   cpi: 8,
   nfp: 8,
   pce: 6,
@@ -56,9 +61,10 @@ export const IMPORTANCE: Record<EventClass, number> = {
   policy_update_due: 1,
   policy_other: 3,
   // Earnings (by market cap tier)
-  earnings_mega: 7, // mcap >= $200B
-  earnings_large: 4, // $10B-$200B
-  earnings_small: 2, // < $10B
+  // NOTE: Market-cap tiers ($200B / $10B) await a stored market cap; until then the calendar sync's
+  // megacap theme decides mega vs large, and sub-$10B names are not ingested.
+  earnings_mega: 7,
+  earnings_large: 4,
   // Corporate events
   corporate_major: 5, // phase3_readout, approval, deal_close, litigation, regulatory_decision w/ ticker, shareholder_vote, patent_decision
   corporate_minor: 3, // lockup_expiry, index_rebalance, buyback_offering, patent_expiry, buildout_completion
@@ -76,7 +82,8 @@ export function macroSeries(c: Pick<Catalyst, "dedupeKey" | "title">): EventClas
   if (c.dedupeKey.startsWith("bea:GDP:")) return "gdp";
   // Fallback for macro rows from other sources (LLM/calendar): classify by title.
   const t = c.title;
-  if (/\bfomc\b|fed(eral reserve)? interest rate|rate decision/i.test(t)) return "fomc";
+  if (/\b(ecb|european central bank|boj|bank of japan|boe|bank of england|boc|bank of canada|snb|swiss national bank|rba|reserve bank of australia|rbnz|pboc|people's bank of china|riksbank|norges bank)\b/i.test(t)) return "central_bank_other";
+  if (/\bfomc\b|federal reserve|\bfed\b/i.test(t)) return "fomc";
   if (/\bcpi\b|consumer price/i.test(t)) return "cpi";
   if (/nonfarm|payrolls|jobs report|employment situation/i.test(t)) return "nfp";
   if (/\bpce\b|personal (income|consumption)/i.test(t)) return "pce";
@@ -88,10 +95,8 @@ export function macroSeries(c: Pick<Catalyst, "dedupeKey" | "title">): EventClas
   return null;
 }
 
-export interface ScoreContext {
-  marketCap?: number;
-  importanceOverride?: number;
-}
+// Reserved for future per-call context.
+export interface ScoreContext {}
 
 /** Classify a catalyst into an EventClass. */
 export function classifyEvent(c: Catalyst, ctx: ScoreContext = {}): EventClass {
@@ -109,13 +114,6 @@ export function classifyEvent(c: Catalyst, ctx: ScoreContext = {}): EventClass {
     return "policy_other";
   }
   if (c.kind === "earnings") {
-    const mcap = ctx.marketCap;
-    if (mcap != null) {
-      if (mcap >= 200e9) return "earnings_mega";
-      if (mcap >= 10e9) return "earnings_large";
-      return "earnings_small";
-    }
-    // Calendar sync only stores >= $50B or watchlist names, so default to large.
     return c.themes.includes("megacap") ? "earnings_mega" : "earnings_large";
   }
   if (
@@ -161,9 +159,9 @@ export function certaintyOf(c: Catalyst): number {
   return CERTAINTY.estimated;
 }
 
-/** Importance weight for a catalyst, honoring an explicit override. */
+/** Importance weight for a catalyst. */
 export function importanceOf(c: Catalyst, ctx: ScoreContext = {}): number {
-  return ctx.importanceOverride ?? IMPORTANCE[classifyEvent(c, ctx)];
+  return IMPORTANCE[classifyEvent(c, ctx)];
 }
 
 /** Product of the three score factors, each clamped to >= 0. */
@@ -176,5 +174,5 @@ export function scoreEvent(c: Catalyst, ctx: ScoreContext = {}): number {
   return scoreParts(importanceOf(c, ctx), certaintyOf(c), c.confidence);
 }
 
-/** Minimum score for a catalyst to appear in the default (non-all) view. */
-export const DEFAULT_VIEW_MIN_SCORE = 2.0;
+/** Minimum score for a catalyst to appear in the default (non-all) view; inclusive (PPI/JOLTS at exactly 4 stay in). */
+export const DEFAULT_VIEW_MIN_SCORE = 4.0;
