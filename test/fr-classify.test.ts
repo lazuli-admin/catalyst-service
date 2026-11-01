@@ -289,11 +289,12 @@ describe("fr-classify synthetic", () => {
     expect(rows[0]!.date).toBe("2026-12-04");
   });
 
-  it('rule "This rule is effective until December 3, 2026." → expiry 2026-12-04', () => {
+  it('rule "This rule is effective until December 3, 2026." → expiry 2026-12-04 estimated (bare until, uncorroborated)', () => {
     const rows = classify(base({ dates: "This rule is effective until December 3, 2026." }), WINDOW);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.kind).toBe("rule_expiry");
     expect(rows[0]!.date).toBe("2026-12-04");
+    expect(rows[0]!.datePrecision).toBe("estimated");
   });
 
   it('rule "expires at 12:01 a.m. … on December 3, 2026" → first day not in force is 2026-12-03 itself', () => {
@@ -304,14 +305,61 @@ describe("fr-classify synthetic", () => {
     expect(rows[0]!.date).toBe("2026-12-03");
   });
 
-  it('suspension "until 12:01 a.m. … on December 3, 2026" → 2026-12-03, not 12-04', () => {
+  it('suspension "until 12:01 a.m. … on December 3, 2026" → suspension_end 2026-12-03, rule_effective, never rule_expiry', () => {
     const rows = classify(
       base({ dates: "The tariffs remain suspended until 12:01 a.m. eastern standard time on December 3, 2026." }),
       WINDOW,
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.role).toBe("expiry");
+    expect(rows[0]!.role).toBe("suspension_end");
+    expect(rows[0]!.kind).toBe("rule_effective");
     expect(rows[0]!.date).toBe("2026-12-03");
+    expect(rows.some((r) => r.kind === "rule_expiry")).toBe(false);
+  });
+
+  it('"suspended through December 3, 2026" → suspension_end 2026-12-04, no expiry; "effective through" stays rule_expiry', () => {
+    const rows = classify(base({ dates: "The tariffs are suspended through December 3, 2026." }), WINDOW);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.role).toBe("suspension_end");
+    expect(rows[0]!.kind).toBe("rule_effective");
+    expect(rows[0]!.date).toBe("2026-12-04");
+    expect(rows.some((r) => r.kind === "rule_expiry")).toBe(false);
+
+    const contrast = classify(base({ dates: "This rule is effective through December 3, 2026." }), WINDOW);
+    expect(contrast).toHaveLength(1);
+    expect(contrast[0]!.kind).toBe("rule_expiry");
+    expect(contrast[0]!.date).toBe("2026-12-04");
+  });
+
+  it('"suspended and remains in effect until" in one sentence → exactly one suspension_end row', () => {
+    const rows = classify(base({ dates: "The action is suspended and remains in effect until December 3, 2026." }), WINDOW);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.role).toBe("suspension_end");
+    expect(rows[0]!.date).toBe("2026-12-04");
+  });
+
+  it('bare "remains until" corroborated by a same-date effective clause → exact expiry', () => {
+    const rows = classify(base({ dates: "The stay remains until December 3, 2026. The rule is effective December 4, 2026." }), WINDOW);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.date).toBe("2026-12-04");
+    expect(rows[0]!.datePrecision).toBe("exact");
+  });
+
+  it('"suspension remains (in effect) until" → suspension_end; "rule remains in effect until" → expiry, not suspension_end', () => {
+    const a = classify(base({ dates: "The suspension remains in effect until December 3, 2026." }), WINDOW);
+    expect(a).toHaveLength(1);
+    expect(a[0]!.role).toBe("suspension_end");
+    expect(a[0]!.kind).toBe("rule_effective");
+    expect(a[0]!.date).toBe("2026-12-04");
+
+    const b = classify(base({ dates: "The suspension remains until December 3, 2026." }), WINDOW);
+    expect(b).toHaveLength(1);
+    expect(b[0]!.role).toBe("suspension_end");
+
+    const c = classify(base({ dates: "The rule remains in effect until December 3, 2026." }), WINDOW);
+    expect(c).toHaveLength(1);
+    expect(c[0]!.role).toBe("expiry");
+    expect(c[0]!.kind).toBe("rule_expiry");
   });
 
   it('"through 11:59 p.m. …" keeps role effective at the next day (unchanged), no expiry row', () => {
@@ -408,6 +456,28 @@ describe("fr-classify presidential operative markers", () => {
       expect(r.dateSource).toBe("text");
     });
   }
+
+  it("marker 'It is hereby ordered' (no 'Section 1.', no 'determine') opens the operative part", () => {
+    const d = presDoc("Preamble mentions December 1, 2026. It is hereby ordered that the duty is effective December 5, 2026.");
+    expect(hasOperativeMarker(d)).toBe(true);
+    const { operative } = operativeText(d);
+    expect(operative.startsWith("It is hereby ordered")).toBe(true);
+    const rows = classify(d, WINDOW);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.date).toBe("2026-12-05");
+    expect(rows[0]!.datePrecision).toBe("exact");
+  });
+
+  it("marker 'I hereby order:' opens the operative part", () => {
+    const d = presDoc("Preamble mentions December 1, 2026. I hereby order: the duty is effective December 5, 2026.");
+    expect(hasOperativeMarker(d)).toBe(true);
+    const { operative } = operativeText(d);
+    expect(operative.startsWith("hereby order:")).toBe(true);
+    const rows = classify(d, WINDOW);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.date).toBe("2026-12-05");
+    expect(rows[0]!.datePrecision).toBe("exact");
+  });
 
   it("presidential doc without any marker: hasOperativeMarker false and rows estimated", () => {
     const d = presDoc("The duties shall apply 12:01 a.m. eastern time on November 9, 2026.");
