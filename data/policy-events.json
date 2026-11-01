@@ -63,11 +63,11 @@
    ]
   },
   {
-   "id": "us-gov-funding-deadline-2026-12-11",
-   "date": "2026-12-11",
-   "dateEnd": "2026-12-11",
+   "id": "us-gov-funding-lapse-2026-12-12",
+   "date": "2026-12-12",
+   "dateEnd": "2026-12-12",
    "precision": "exact",
-   "title": "US government funding deadline: continuing resolution (P.L. 119-103) expires; shutdown risk",
+   "title": "Government funding lapses from Dec 12 unless extended (funded through Dec 11 under CR P.L. 119-103)",
    "kind": "regulatory_decision",
    "sourceUrl": "https://www.govinfo.gov/content/pkg/PLAW-119publ103/html/PLAW-119publ103.htm",
    "themes": [
