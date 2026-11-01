@@ -21,7 +21,7 @@ describe("syncPolicyEvents", () => {
     expect(rows.length).toBeGreaterThan(0);
     expect(rows.every((r) => r.ticker === null && r.status === "scheduled" && r.confidence === 0.95 && r.sourceTier === 1)).toBe(true);
     expect(rows.every((r) => r.dedupeKey.startsWith("policy:"))).toBe(true);
-    expect(rows.some((r) => r.dedupeKey === "policy:china-ieepa-pause-end")).toBe(true);
+    expect(rows.some((r) => r.dedupeKey === "policy:s301-china-exclusions-end")).toBe(true);
     const keep = s.purgeByKeyPrefixExcept.mock.calls[0]![1];
     expect(keep).toEqual(rows.map((r) => r.dedupeKey));
   });
@@ -30,8 +30,8 @@ describe("syncPolicyEvents", () => {
     const s = store();
     await syncPolicyEvents(s, { today: "2026-11-01", horizonDays: 150, file: "data/policy-events.json" });
     const rows = s.upsertCatalyst.mock.calls.map(([c]) => c as Catalyst);
-    // window event 2027-03-02..19 vs horizon end 2027-03-31 -> overlap
-    expect(rows.some((r) => r.dedupeKey === "policy:paramount-wbd-state-trial")).toBe(true);
+    // 2026-12-04 event vs horizon end 2027-03-31 -> within horizon
+    expect(rows.some((r) => r.dedupeKey === "policy:s232-polysilicon-effective")).toBe(true);
     // 2027-04-20 events are beyond 2027-03-31 -> dropped
     expect(rows.some((r) => r.dedupeKey === "policy:s232-wind-update-due")).toBe(false);
   });

@@ -102,7 +102,7 @@ export async function syncFederalRegister(
   let allAgenciesOk = true;
   const end = horizonEnd(opts.today, opts.horizonDays);
   const gte = new Date(Date.parse(`${opts.today}T00:00:00Z`) - 400 * 86_400_000).toISOString().slice(0, 10);
-  const fields = ["title", "effective_on", "publication_date", "html_url", "abstract", "document_number", "comments_close_on"]
+  const fields = ["title", "effective_on", "publication_date", "html_url", "abstract", "document_number", "comments_close_on", "type", "dates"]
     .map((f) => `fields[]=${f}`)
     .join("&");
   for (const [slug, agency] of Object.entries(FR_AGENCIES)) {
@@ -131,7 +131,8 @@ export async function syncFederalRegister(
         // Effective-date candidates keep the plain title; abstract end dates shift to the NEXT day (rule back in force).
         const inWindow = (d: string) => d >= opts.today && d <= end;
         const candidates: { date: string; isEnd: boolean }[] = [];
-        if (typeof row.effective_on === "string" && /^\d{4}-\d{2}-\d{2}$/.test(row.effective_on) && inWindow(row.effective_on)) {
+        // Proposed rules have no effective date; FR puts the comment deadline there.
+        if (row.type !== "Proposed Rule" && typeof row.effective_on === "string" && /^\d{4}-\d{2}-\d{2}$/.test(row.effective_on) && inWindow(row.effective_on)) {
           candidates.push({ date: row.effective_on, isEnd: false });
         }
         const abstractEnd = /suspen|pause/i.test(abstract) && !/^(request for comments|applications for)/i.test(title)
@@ -166,7 +167,31 @@ export async function syncFederalRegister(
           });
         }
         const commentsOn = typeof row.comments_close_on === "string" && /^\d{4}-\d{2}-\d{2}$/.test(row.comments_close_on) ? row.comments_close_on : null;
-        if (commentsOn && inWindow(commentsOn) && keepCommentClose(agency.label, title)) {
+        // Proposed rule: effective_on is the initial comment deadline, comments_close_on the reply deadline.
+        const proposedInitial =
+          row.type === "Proposed Rule" && commentsOn !== null && typeof row.effective_on === "string" &&
+          /^\d{4}-\d{2}-\d{2}$/.test(row.effective_on) && row.effective_on < commentsOn
+            ? row.effective_on
+            : null;
+        if (proposedInitial && commentsOn && inWindow(proposedInitial) && keepCommentClose(agency.label, title)) {
+          await store.upsertCatalyst({
+            ticker: null,
+            title: `${agency.label} comments close ${fmtDate(proposedInitial)} (replies ${fmtDate(commentsOn)}): ${title}`,
+            kind: "regulatory_decision",
+            status: "scheduled",
+            dateStart: proposedInitial,
+            dateEnd: proposedInitial,
+            datePrecision: "exact",
+            confidence: 0.9,
+            impactWeight: 1,
+            themes: agency.themes,
+            affectedTickers: agency.affectedTickers,
+            sourceTier: 1,
+            sourceUrl: htmlUrl,
+            observationId: null,
+            dedupeKey: `fr:${documentNumber}:comments:${proposedInitial}`,
+          });
+        } else if (commentsOn && inWindow(commentsOn) && keepCommentClose(agency.label, title)) {
           await store.upsertCatalyst({
             ticker: null,
             title: `${agency.label} comments close: ${title}`,
@@ -174,6 +199,7 @@ export async function syncFederalRegister(
             status: "scheduled",
             dateStart: commentsOn,
             dateEnd: commentsOn,
+            impactWeight: 1,
             datePrecision: "exact",
             confidence: 0.9,
             themes: agency.themes,

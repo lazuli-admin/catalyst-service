@@ -2,30 +2,6 @@
  "verified": "2026-10-31",
  "events": [
   {
-   "id": "china-ieepa-pause-end",
-   "date": "2026-11-10",
-   "dateEnd": "2026-11-10",
-   "precision": "exact",
-   "title": "China: suspension of heightened IEEPA reciprocal tariffs ends at 12:01 a.m. ET unless extended (EO of Nov 2025, US-PRC arrangement)",
-   "kind": "rule_effective",
-   "impactWeight": 3,
-   "sourceUrl": "https://www.federalregister.gov/documents/full_text/html/2025/11/07/2025-19826.html",
-   "themes": [
-    "China imports",
-    "consumer goods",
-    "semiconductors",
-    "retail"
-   ],
-   "affectedTickers": [
-    "AAPL",
-    "NKE",
-    "WMT",
-    "TGT",
-    "FXI",
-    "KWEB"
-   ]
-  },
-  {
    "id": "ustr-301-maritime-suspension-end",
    "date": "2026-11-10",
    "dateEnd": "2026-11-10",
@@ -105,22 +81,61 @@
    "affectedTickers": []
   },
   {
-   "id": "paramount-wbd-state-trial",
-   "date": "2027-03-02",
-   "dateEnd": "2027-03-19",
-   "precision": "window",
-   "title": "Paramount Skydance / Warner Bros. Discovery: state AG merger trial, N.D. Cal. (Mar 2\u201319)",
-   "kind": "litigation",
-   "impactWeight": 3,
-   "sourceUrl": "https://www.appliedantitrust.com/14_merger_litigation/cases_state/paramount_wbd2026/3_ndcalif/paramount_wbd_ndcalif_trial_schedule_preliminary_order2026_08_04.pdf",
+   "id": "s232-polysilicon-effective",
+   "date": "2026-12-04",
+   "dateEnd": "2026-12-04",
+   "precision": "exact",
+   "title": "Section 232 polysilicon: minimum import prices plus 15% duty take effect 12:01 a.m. ET (Proclamation, FR 2026-16400)",
+   "kind": "rule_effective",
+   "impactWeight": 2,
+   "sourceUrl": "https://www.federalregister.gov/documents/2026/08/11/2026-16400/adjusting-imports-of-polysilicon-and-its-derivatives-into-the-united-states",
    "themes": [
-    "media",
-    "merger"
+    "solar",
+    "polysilicon",
+    "Section 232"
    ],
    "affectedTickers": [
-    "PSKY",
-    "WBD"
+    "FSLR",
+    "ENPH",
+    "SEDG",
+    "CSIQ",
+    "JKS"
    ]
+  },
+  {
+   "id": "s232-drone-components-25",
+   "date": "2027-02-09",
+   "dateEnd": "2027-02-09",
+   "precision": "exact",
+   "title": "Section 232 drones: duty on UAS components rises to 25% at 12:01 a.m. ET (Proclamation, FR 2026-16979)",
+   "kind": "rule_effective",
+   "impactWeight": 2,
+   "sourceUrl": "https://www.federalregister.gov/documents/2026/08/19/2026-16979/adjusting-imports-of-unmanned-aircraft-systems-and-unmanned-aircraft-systems-components-into-the",
+   "themes": [
+    "drones",
+    "Section 232"
+   ],
+   "affectedTickers": [
+    "AVAV",
+    "KTOS",
+    "RCAT",
+    "UMAC"
+   ]
+  },
+  {
+   "id": "s301-china-exclusions-end",
+   "date": "2026-11-09",
+   "dateEnd": "2026-11-09",
+   "precision": "exact",
+   "title": "Section 301 China: extended product exclusions expire 11:59 p.m. ET unless extended (USTR notice, FR 2025-21671)",
+   "kind": "rule_effective",
+   "impactWeight": 2,
+   "sourceUrl": "https://www.federalregister.gov/documents/2025/12/01/2025-21671/notice-of-product-exclusion-extensions-chinas-acts-policies-and-practices-related-to-technology",
+   "themes": [
+    "China imports",
+    "Section 301"
+   ],
+   "affectedTickers": []
   }
  ]
 }

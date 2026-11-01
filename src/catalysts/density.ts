@@ -79,6 +79,11 @@ export function certainty(c: Catalyst): number {
   return PRECISION_MULTIPLIER.estimated;
 }
 
+/** Policy catalysts cluster only with other policy catalysts: dedupeKey prefix or litigation kind. */
+export function isPolicyCatalyst(c: Catalyst): boolean {
+  return c.dedupeKey.startsWith("policy:") || c.dedupeKey.startsWith("fr:") || c.kind === "litigation";
+}
+
 /** Per-ticker catalyst density with lead-time buckets and distinct-kind cluster bonuses. Pure. */
 export function catalystDensity(
   cats: Catalyst[],
@@ -108,25 +113,31 @@ export function catalystDensity(
     entry.items.sort((a, b) => Date.parse(a.catalyst.dateStart) - Date.parse(b.catalyst.dateStart));
     entry.score = entry.items.reduce((sum, i) => sum + i.score, 0);
     // Cluster bonus: items whose dateStart is within CLUSTER_SPAN_DAYS of the cluster's FIRST item, with >=2 distinct kinds.
-    let cluster: TickerDensityItem[] = [];
-    const flush = () => {
-      if (cluster.length >= 2) {
-        const kinds = [...new Set(cluster.map((i) => i.catalyst.kind))];
-        if (kinds.length >= 2) {
-          const maxLead = Math.max(...cluster.map((i) => LEAD_MULTIPLIERS[i.bucket]));
-          const bonus = CLUSTER_BONUS_PER_KIND * (kinds.length - 1) * maxLead;
-          entry.score += bonus;
-          if (cluster.some((i) => i.bucket === "actionable")) entry.actionableScore += bonus;
-          entry.clusters.push({ start: cluster[0]!.catalyst.dateStart, end: cluster.at(-1)!.catalyst.dateStart, kinds });
+    // Run per policy-group so a cluster never mixes policy and non-policy events.
+    const runCluster = (items: TickerDensityItem[]) => {
+      let cluster: TickerDensityItem[] = [];
+      const flush = () => {
+        if (cluster.length >= 2) {
+          const kinds = [...new Set(cluster.map((i) => i.catalyst.kind))];
+          if (kinds.length >= 2) {
+            const maxLead = Math.max(...cluster.map((i) => LEAD_MULTIPLIERS[i.bucket]));
+            const bonus = CLUSTER_BONUS_PER_KIND * (kinds.length - 1) * maxLead;
+            entry.score += bonus;
+            if (cluster.some((i) => i.bucket === "actionable")) entry.actionableScore += bonus;
+            entry.clusters.push({ start: cluster[0]!.catalyst.dateStart, end: cluster.at(-1)!.catalyst.dateStart, kinds });
+          }
         }
+        cluster = [];
+      };
+      for (const item of items) {
+        if (cluster.length && tradingDaysBetween(cluster[0]!.catalyst.dateStart, item.catalyst.dateStart) > CLUSTER_SPAN_DAYS) flush();
+        cluster.push(item);
       }
-      cluster = [];
+      flush();
     };
-    for (const item of entry.items) {
-      if (cluster.length && tradingDaysBetween(cluster[0]!.catalyst.dateStart, item.catalyst.dateStart) > CLUSTER_SPAN_DAYS) flush();
-      cluster.push(item);
-    }
-    flush();
+    runCluster(entry.items.filter((i) => isPolicyCatalyst(i.catalyst)));
+    runCluster(entry.items.filter((i) => !isPolicyCatalyst(i.catalyst)));
+    entry.clusters.sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
   }
   return [...byTicker.values()].sort((a, b) => b.score - a.score);
 }

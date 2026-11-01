@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { catalystDensity } from "../src/catalysts/density.js";
-import { mergeSharedClusters } from "../src/catalysts/page.js";
+import { mergeSharedClusters, renderCalendarPage } from "../src/catalysts/page.js";
 import type { Catalyst } from "../src/types.js";
 
 const cat = (overrides: Partial<Catalyst> = {}): Catalyst => ({
@@ -66,5 +66,21 @@ describe("mergeSharedClusters", () => {
     const merged = mergeSharedClusters(catalystDensity(cats, { asOf: "2026-11-01" }));
     expect(merged).toHaveLength(2);
     expect(merged.map((m) => m.events.map((e) => e.id))).toEqual([["n1", "n2"], ["a1", "a2"]]);
+  });
+});
+
+describe("renderCalendarPage policy filter", () => {
+  it("hide=policy removes policy rows, keeps earnings, and renders the Policy pill", () => {
+    const cats = [
+      cat({ id: "pe", ticker: "NVDA", title: "NVDA earnings" }),
+      cat({ id: "pp", ticker: "AMD", title: "Rule effective", kind: "rule_effective", dedupeKey: "policy:rule-1" }),
+    ];
+    const base = renderCalendarPage({ cats, asOf: "2026-11-01", all: true });
+    expect(base).toContain("NVDA earnings");
+    expect(base).toContain("Rule effective");
+    expect(base).toContain(">✓ Policy</a>");
+    const noPolicy = renderCalendarPage({ cats, asOf: "2026-11-01", all: true, hide: "policy" });
+    expect(noPolicy).toContain("NVDA earnings");
+    expect(noPolicy).not.toContain("Rule effective");
   });
 });
