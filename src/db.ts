@@ -961,6 +961,7 @@ export class Store {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(dedupe_key) DO UPDATE SET
          title = CASE WHEN excluded.source_tier <= catalysts.source_tier THEN excluded.title ELSE catalysts.title END,
+         kind = CASE WHEN excluded.source_tier <= catalysts.source_tier THEN excluded.kind ELSE catalysts.kind END,
          status = excluded.status,
          date_start = excluded.date_start,
          date_end = excluded.date_end,
