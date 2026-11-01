@@ -20,6 +20,8 @@ describe("API key auth", () => {
   it("leaves GET requests public", async () => {
     expect((await app.inject({ method: "GET", url: "/themes" })).statusCode).toBe(200);
     expect((await app.inject({ method: "GET", url: "/health" })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/api/events" })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/catalysts" })).statusCode).toBe(200);
     expect((await app.inject({ method: "HEAD", url: "/themes" })).statusCode).toBe(200);
   });
 

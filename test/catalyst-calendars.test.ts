@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { syncCalendars } from "../src/catalysts/calendars.js";
+import { IR_SOURCES, syncCalendars } from "../src/catalysts/calendars.js";
 import type { Catalyst } from "../src/types.js";
 
 const EARNINGS_URL = "https://api.nasdaq.com/api/calendar/earnings?date=";
@@ -71,6 +71,18 @@ describe("syncCalendars", () => {
     await syncCalendars(s as never, { ...opts, fetch: mockFetch(earnings) as unknown as typeof fetch });
     const themes = s.upsertCatalyst.mock.calls.map(([c]) => (c as { themes: string[] }).themes);
     expect(themes).toEqual([["megacap"], []]);
+  });
+
+  it("sources earnings: LITE gets its IR url, others their EDGAR 8-K list", async () => {
+    const earnings = { data: { rows: [
+      { symbol: "LITE", name: "Lumentum Holdings", marketCap: "$100,000,000,000", time: "time-pre-market" },
+      { symbol: "NVDA", name: "NVIDIA Corp", marketCap: "$3,000,000,000,000", time: "time-pre-market" },
+    ] } };
+    const s = store();
+    await syncCalendars(s as never, { ...opts, fetch: mockFetch(earnings) as unknown as typeof fetch });
+    const urls = s.upsertCatalyst.mock.calls.map(([c]) => (c as { sourceUrl: string | null }).sourceUrl);
+    expect(urls[0]).toBe(IR_SOURCES.LITE);
+    expect(urls[1]).toBe("https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=NVDA&type=8-K");
   });
 
   it("tolerates null rows", async () => {

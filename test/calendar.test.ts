@@ -56,6 +56,16 @@ describe("renderCalendarPage", () => {
     expect(grid(base)).toBe(grid(sunday));
   });
 
+  it("shows last refreshed as the max updatedAt minute (or never) and ✓ on on-pills", () => {
+    const today = new Date().toISOString().slice(0, 10);
+    expect(renderCalendarPage({ cats: [], asOf: today, all: false })).toContain("Last refreshed: never");
+    const c = { ...full(cat({ dateStart: inWeek(6), dateEnd: inWeek(6), dedupeKey: "rf" })), updatedAt: "2026-02-12T09:05:33.000Z" };
+    const html = renderCalendarPage({ cats: [c], asOf: today, all: false });
+    expect(html).toContain("Last refreshed: 2026-02-12T09:05 UTC");
+    expect(html).toContain("✓ Earnings");
+    expect(html).toContain("text-decoration:line-through");
+  });
+
   it("renders prev/today/next links preserving all=1", () => {
     const today = new Date().toISOString().slice(0, 10);
     const sun = weekSunday(today);
@@ -153,9 +163,9 @@ describe("renderCalendarPage", () => {
   it("renders filter pills and styles shown ones filled with aria-pressed", () => {
     const today = new Date().toISOString().slice(0, 10);
     const html = renderCalendarPage({ cats: [], asOf: today, all: false });
-    expect(html).toContain('class="pill pill-on" aria-pressed="true" href="?hide=earnings">Earnings</a>');
-    expect(html).toContain('class="pill pill-on" aria-pressed="true" href="?hide=macro">Macro</a>');
-    expect(html).toContain('class="pill pill-on" aria-pressed="true" href="?hide=global">Global</a>');
+    expect(html).toContain('class="pill pill-on" aria-pressed="true" href="?hide=earnings">✓ Earnings</a>');
+    expect(html).toContain('class="pill pill-on" aria-pressed="true" href="?hide=macro">✓ Macro</a>');
+    expect(html).toContain('class="pill pill-on" aria-pressed="true" href="?hide=global">✓ Global</a>');
   });
 
   it("hide=earnings removes earnings chips from the week grid but keeps macro and global", () => {
@@ -195,8 +205,8 @@ describe("renderCalendarPage", () => {
     const next = new Date(Date.parse(`${sun}T00:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10);
     const html = renderCalendarPage({ cats: [], asOf: today, all: true, week: sun, hide: "earnings" });
     expect(html).toContain(`aria-pressed="false" href="?week=${sun}&all=1">Earnings</a>`);
-    expect(html).toContain(`aria-pressed="true" href="?week=${sun}&all=1&hide=earnings,macro">Macro</a>`);
-    expect(html).toContain(`aria-pressed="true" href="?week=${sun}&all=1&hide=earnings,global">Global</a>`);
+    expect(html).toContain(`aria-pressed="true" href="?week=${sun}&all=1&hide=earnings,macro">✓ Macro</a>`);
+    expect(html).toContain(`aria-pressed="true" href="?week=${sun}&all=1&hide=earnings,global">✓ Global</a>`);
     expect(html).toContain(`href="?week=${prev}&all=1&hide=earnings"`);
     expect(html).toContain(`href="?week=${next}&all=1&hide=earnings"`);
     expect(html).toContain('href="?all=1&hide=earnings"');

@@ -15,6 +15,11 @@ const TIMEOUT_MS = 15_000;
 /** Market cap at or above which an earnings catalyst is tagged "megacap". */
 export const MEGACAP_MIN = 200e9;
 
+/** Per-symbol investor-relations pages; other symbols fall back to their EDGAR 8-K list. */
+export const IR_SOURCES: Record<string, string> = {
+  LITE: "https://investor.lumentum.com/financial-news-releases/news-details/2026/Lumentum-Announces-Reporting-Date-for-Fiscal-First-Quarter-2027-Financial-Results/default.aspx",
+};
+
 // Market-cap strings like "$253,966,172,000".
 function parseMarketCap(raw: unknown): number {
   if (typeof raw !== "string") return 0;
@@ -83,6 +88,7 @@ async function syncEarningsDay(
         confidence: 0.95,
         themes: marketCap >= MEGACAP_MIN ? ["megacap"] : [],
         affectedTickers: [],
+        sourceUrl: IR_SOURCES[symbol] ?? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${symbol}&type=8-K`,
       });
       ctx.counts.earnings++;
     }
@@ -91,6 +97,6 @@ async function syncEarningsDay(
   }
 }
 
-async function upsert(store: Pick<Store, "upsertCatalyst">, c: Omit<Catalyst, "id" | "createdAt" | "updatedAt" | "sourceUrl" | "observationId" | "dedupeKey" | "sourceTier" | "datePrecision" | "impactWeight"> & { sourceUrl?: null; observationId?: null; dedupeKey?: string }): Promise<void> {
-  await store.upsertCatalyst({ ...c, sourceTier: 1, sourceUrl: null, observationId: null, dedupeKey: c.dedupeKey ?? catalystDedupeKey(c) });
+async function upsert(store: Pick<Store, "upsertCatalyst">, c: Omit<Catalyst, "id" | "createdAt" | "updatedAt" | "sourceUrl" | "observationId" | "dedupeKey" | "sourceTier" | "datePrecision" | "impactWeight"> & { sourceUrl?: string | null; observationId?: null; dedupeKey?: string }): Promise<void> {
+  await store.upsertCatalyst({ ...c, sourceTier: 1, sourceUrl: c.sourceUrl ?? null, observationId: null, dedupeKey: c.dedupeKey ?? catalystDedupeKey(c) });
 }

@@ -124,6 +124,10 @@ export function renderCalendarPage(opts: { cats: Catalyst[]; asOf: string; all: 
     const [, m = 1, d = 1] = date.split("-").map(Number);
     return `<div class="day${date === opts.asOf ? " today" : ""}"><h3>${MONTHS[m - 1]} ${d}</h3>${shown.join("")}</div>`;
   };
+  // Pure: max updatedAt among the rendered catalysts, truncated to the minute.
+  const refreshed = opts.cats.length
+    ? opts.cats.reduce((m, c) => (c.updatedAt > m ? c.updatedAt : m), opts.cats[0]!.updatedAt).slice(0, 16)
+    : "never";
   const [wy = 0, wm = 0, wd = 0] = week.split("-").map(Number);
   const hasWeek = !!(opts.week && isDate(opts.week));
   const keep = { all: opts.all, hide: [...hidden] };
@@ -133,7 +137,7 @@ export function renderCalendarPage(opts: { cats: Catalyst[]; asOf: string; all: 
     .map((g) => {
       const on = !hidden.has(g);
       const hideNext = on ? [...hidden, g] : [...hidden].filter((x) => x !== g);
-      return `<a class="pill ${on ? "pill-on" : "pill-off"}" aria-pressed="${on}" href="${href({ week: hasWeek ? week : undefined, ...keep, hide: hideNext })}">${g.charAt(0).toUpperCase()}${g.slice(1)}</a>`;
+      return `<a class="pill ${on ? "pill-on" : "pill-off"}" aria-pressed="${on}" href="${href({ week: hasWeek ? week : undefined, ...keep, hide: hideNext })}">${on ? "✓ " : ""}${g.charAt(0).toUpperCase()}${g.slice(1)}</a>`;
     })
     .join(" ");
   const toggle = opts.all
@@ -156,7 +160,7 @@ h1{font-size:1.1rem;margin:0}
 .until{font-size:.72rem;color:#999}
 .pill{display:inline-block;padding:.25rem .7rem;border-radius:999px;border:1px solid #2a2a2a;text-decoration:none;min-height:1.7rem}
 .pill-on{background:#8ab4f8;color:#111;border-color:#8ab4f8}
-.pill-off{background:transparent;color:#8ab4f8}
+.pill-off{background:transparent;color:#8ab4f8;text-decoration:line-through}
 .cluster{margin:1rem 0;border:1px solid #333;padding:.5rem;border-radius:.3rem}
 .cluster summary{cursor:pointer;font-weight:bold}
 .cluster ul{margin:0;padding-left:1rem}
@@ -169,7 +173,7 @@ h1{font-size:1.1rem;margin:0}
   .pill,.cluster summary{min-height:40px;display:flex;align-items:center}
 }
 </style></head><body>
-<header><h1>Catalyst calendar — Week of ${MONTHS[wm - 1] ?? ''} ${wd ?? ''}, ${wy ?? ''}</h1> <a href="${href({ week: prev, ...keep })}">‹ Prev</a> <a href="${href(keep)}">Today</a> <a href="${href({ week: next, ...keep })}">Next ›</a> ${toggle} <nav class="pills">${pills}</nav></header>
+<header><h1>Catalyst calendar — Week of ${MONTHS[wm - 1] ?? ''} ${wd ?? ''}, ${wy ?? ''}</h1><span>Last refreshed: ${refreshed === "never" ? "never" : `${refreshed} UTC`}</span> <a href="${href({ week: prev, ...keep })}">‹ Prev</a> <a href="${href(keep)}">Today</a> <a href="${href({ week: next, ...keep })}">Next ›</a> ${toggle} <nav class="pills">${pills}</nav></header>
 <h2>Material clusters</h2>
 ${materialClusters || '<p>No material clusters found.</p>'}
 <div class="weekwrap"><div class="week">${days.map(dayCell).join("")}</div></div>
