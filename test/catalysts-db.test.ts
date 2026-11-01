@@ -76,4 +76,23 @@ describe("catalysts db", () => {
     expect(densityWithLeads).toHaveLength(1);
     expect(densityWithLeads[0]!.ticker).toBe("NVDA");
   });
+
+  it("purgeStaleCatalysts deletes only matching kind, on/after the from date, updated before the cutoff", async () => {
+    const store = await memoryStore();
+    await store.upsertCatalyst({ ...base, kind: "rule_effective", dateStart: "2025-11-09", dedupeKey: "fr:old" });
+    await store.upsertCatalyst({ ...base, kind: "rule_effective", dateStart: "2026-11-10", dedupeKey: "fr:fresh" });
+    await store.upsertCatalyst({ ...base, kind: "earnings", dateStart: "2026-11-10", dedupeKey: "nvda-q4" });
+    // Cutoff in the past: everything was updated after it, so nothing is stale.
+    expect(await store.purgeStaleCatalysts("rule_effective", "2026-11-01", "2000-01-01T00:00:00.000Z", "fr:")).toBe(0);
+    // Real cutoff: deletes the fresh-in-window rule row, keeps the old-dated one and the other kind.
+    expect(await store.purgeStaleCatalysts("rule_effective", "2026-11-01", "2999-01-01T00:00:00.000Z", "fr:")).toBe(1);
+    expect(await store.listCatalysts({ from: "2025-01-01", to: "2027-12-31" })).toHaveLength(2);
+  });
+
+  it("purgeStaleCatalysts spares rule rows whose dedupe key lacks the given prefix", async () => {
+    const store = await memoryStore();
+    await store.upsertCatalyst({ ...base, kind: "rule_effective", dateStart: "2026-11-10", dedupeKey: "news:rule" });
+    expect(await store.purgeStaleCatalysts("rule_effective", "2026-11-01", "2999-01-01T00:00:00.000Z", "fr:")).toBe(0);
+    expect(await store.listCatalysts({ from: "2025-01-01", to: "2027-12-31" })).toHaveLength(1);
+  });
 });

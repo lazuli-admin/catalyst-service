@@ -21,6 +21,12 @@ const MONTH_INDEX: Record<string, number> = {
   July: 7, August: 8, September: 9, October: 10, November: 11, December: 12,
 };
 
+const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function fmt(date: string): string {
+  const [, m = 1, d = 1] = date.split("-").map(Number);
+  return `${MONTH_SHORT[m - 1]} ${d}`;
+}
+
 function horizonEnd(today: string, horizonDays: number): string {
   return new Date(Date.parse(`${today}T00:00:00Z`) + horizonDays * 86_400_000).toISOString().slice(0, 10);
 }
@@ -135,9 +141,9 @@ async function syncFomc(store: Pick<Store, "upsertCatalyst">, opts: { today: str
     store,
     opts,
     parseFomcMeetings(html, Number(opts.today.slice(0, 4))).map((mtg) => ({
-      date: mtg.dateStart,
+      date: mtg.dateEnd,
       dateEnd: mtg.dateEnd,
-      title: `FOMC meeting (rate decision day 2)${mtg.sep ? " + SEP" : ""}`,
+      title: `FOMC rate decision (meeting ${fmt(mtg.dateStart)}–${fmt(mtg.dateEnd)})${mtg.sep ? " + SEP" : ""}`,
       dedupeKey: `fed:fomc:${mtg.dateStart}`,
       sourceUrl: FOMC_URL,
     })),

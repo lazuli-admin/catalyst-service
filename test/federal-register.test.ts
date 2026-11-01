@@ -6,7 +6,10 @@ const res = (body: unknown, ok = true) => ({ ok, status: ok ? 200 : 500, json: a
 const BIS = "industry-and-security-bureau";
 const FTC = "federal-trade-commission";
 
-const store = () => ({ upsertCatalyst: vi.fn(async (c: unknown) => ({ ...(c as object) } as Catalyst)) });
+const store = () => ({
+  upsertCatalyst: vi.fn(async (c: unknown) => ({ ...(c as object) } as Catalyst)),
+  purgeStaleCatalysts: vi.fn(async (_kind: string, _from: string, _before: string, _keyPrefix: string) => 0),
+});
 const opts = { today: "2026-11-01", horizonDays: 14 };
 const catalysts = (s: ReturnType<typeof store>) => s.upsertCatalyst.mock.calls.map(([c]) => c as Catalyst);
 
@@ -141,6 +144,17 @@ describe("syncFederalRegister", () => {
     expect(logs.some((m) => m.includes("federal register") && m.includes("HTTP 500"))).toBe(true);
     expect(logs.some((m) => m.includes(FTC))).toBe(true);
     expect(catalysts(s).map((r) => r.title)).toEqual(["Good rule on entity list parties"]);
+    expect(s.purgeStaleCatalysts).not.toHaveBeenCalled();
+  });
+
+  it("purges stale rule rows once all agencies succeed", async () => {
+    const s = store();
+    const started = new Date().toISOString();
+    await syncFederalRegister(s, { ...opts, fetch: mockFetch({}) as unknown as typeof fetch });
+    expect(s.purgeStaleCatalysts).toHaveBeenCalledTimes(1);
+    const [kind, from, before, keyPrefix] = s.purgeStaleCatalysts.mock.calls[0]!;
+    expect([kind, from, keyPrefix]).toEqual(["rule_effective", opts.today, "fr:"]);
+    expect(before >= started && before <= new Date().toISOString()).toBe(true);
   });
 });
 
