@@ -160,6 +160,7 @@ const MIGRATIONS = [
     date_end TEXT NOT NULL,
     date_precision TEXT,
     confidence REAL NOT NULL,
+    -- legacy, unused: kept to avoid a migration; no code reads or writes it
     impact_weight REAL,
     themes TEXT NOT NULL DEFAULT '[]',
     affected_tickers TEXT NOT NULL DEFAULT '[]',
@@ -196,7 +197,6 @@ const toCatalyst = (row: Row): Catalyst => ({
   affectedTickers: parse(row.affected_tickers, [] as string[]),
   sourceTier: (Number(row.source_tier) || 3) as Catalyst["sourceTier"],
   sourceUrl: sOrNull(row.source_url),
-  impactWeight: row.impact_weight === null || row.impact_weight === undefined ? null : Number(row.impact_weight),
   observationId: sOrNull(row.observation_id),
   dedupeKey: s(row.dedupe_key),
   createdAt: s(row.created_at),
@@ -403,6 +403,7 @@ export class Store {
       await this.client.execute("ALTER TABLE catalysts ADD COLUMN date_precision TEXT");
     }
     if (!catalystCols.some((c) => c.name === "impact_weight")) {
+      // legacy, unused: kept to avoid a migration; no code reads or writes it
       await this.client.execute("ALTER TABLE catalysts ADD COLUMN impact_weight REAL");
     }
   }
@@ -948,8 +949,8 @@ export class Store {
     const datePrecision = c.datePrecision ?? (c.dateStart === c.dateEnd ? "exact" : "window");
     const rows = await this.all(
       `INSERT INTO catalysts
-       (id, ticker, title, kind, status, date_start, date_end, date_precision, confidence, themes, affected_tickers, source_tier, source_url, impact_weight, observation_id, dedupe_key, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, ticker, title, kind, status, date_start, date_end, date_precision, confidence, themes, affected_tickers, source_tier, source_url, observation_id, dedupe_key, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(dedupe_key) DO UPDATE SET
          title = CASE WHEN excluded.source_tier <= catalysts.source_tier THEN excluded.title ELSE catalysts.title END,
          status = excluded.status,
@@ -961,10 +962,9 @@ export class Store {
          affected_tickers = excluded.affected_tickers,
          source_tier = MIN(catalysts.source_tier, excluded.source_tier),
          source_url = CASE WHEN excluded.source_tier <= catalysts.source_tier THEN excluded.source_url ELSE catalysts.source_url END,
-         impact_weight = COALESCE(excluded.impact_weight, catalysts.impact_weight),
          updated_at = excluded.updated_at
        RETURNING *`,
-      [newId(), c.ticker, c.title, c.kind, c.status, c.dateStart, c.dateEnd, datePrecision, c.confidence, json(c.themes), json(c.affectedTickers), c.sourceTier, c.sourceUrl, c.impactWeight ?? null, c.observationId, c.dedupeKey, updatedAt, updatedAt],
+      [newId(), c.ticker, c.title, c.kind, c.status, c.dateStart, c.dateEnd, datePrecision, c.confidence, json(c.themes), json(c.affectedTickers), c.sourceTier, c.sourceUrl, c.observationId, c.dedupeKey, updatedAt, updatedAt],
     );
     if (!rows[0]) throw new Error("upsertCatalyst returned no row");
     return toCatalyst(rows[0]);

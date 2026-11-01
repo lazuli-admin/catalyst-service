@@ -16,7 +16,6 @@ const base: Omit<Catalyst, "id" | "createdAt" | "updatedAt"> = {
   themes: ["ai"],
   affectedTickers: ["NVDA"],
   sourceUrl: null,
-  impactWeight: null,
   observationId: null,
   dedupeKey: "nvda-q4-2025",
 };

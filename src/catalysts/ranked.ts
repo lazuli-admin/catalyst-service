@@ -1,5 +1,5 @@
 import { leadBucket, tradingDaysBetween, type LeadBucket } from "./density.js";
-import { scoreEvent, importanceOf, classifyEvent, DEFAULT_VIEW_MIN_SCORE, type EventClass } from "../scoring/importance.js";
+import { scoreEvent, importanceOf, classifyEvent, isAlwaysShown, DEFAULT_VIEW_MIN_SCORE, type EventClass } from "../scoring/importance.js";
 import type { Catalyst } from "../types.js";
 
 export interface RankedCatalyst extends Catalyst {
@@ -64,7 +64,7 @@ export function rankCatalysts(cats: Catalyst[], opts: { asOf: string; all?: bool
       // Default view: score-gated upcoming events (score includes the focus boost).
       if (c.status === "lead" || c.status === "cancelled" || c.status === "done") return false;
       if (Date.parse(c.dateEnd) < Date.parse(opts.asOf)) return false;
-      return c.score >= DEFAULT_VIEW_MIN_SCORE;
+      return isAlwaysShown(c) || c.score >= DEFAULT_VIEW_MIN_SCORE;
     });
   // Class shares (BRK.A/BRK.B, FOXA/FOX, NWSA/NWS...) collapse to one earnings row per date+company, keeping the higher score (ties: alphabetically last ticker).
   const best = new Map<string, RankedCatalyst>();

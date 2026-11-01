@@ -111,4 +111,40 @@ describe("createSyncLock", () => {
     await first;
     expect(lock.stats()["sync"]!.skips).toBe(1);
   });
+
+  it("a check() message sets lastError (sanitized); success sets lastOk and clears lastError", async () => {
+    const lock = createSyncLock();
+    const stats = () => lock.stats()["sync"]!;
+    await lock.run("sync", async () => "bad", () =>
+      "fetch failed https://x.com/a?token=abc key=zzz Bearer qqq",
+    );
+    const err = stats().lastError;
+    expect(err).toBe("fetch failed https://x.com/a?<redacted> key=<redacted> Bearer <redacted>");
+    expect(err).not.toContain("abc");
+    expect(err).not.toContain("zzz");
+    expect(err).not.toContain("qqq");
+    expect(stats().lastOk).toBeNull();
+
+    await lock.run("sync", async () => "ok");
+    expect(stats().lastOk).toEqual(expect.any(String));
+    expect(new Date(stats().lastOk!).getTime()).not.toBeNaN();
+    expect(stats().lastError).toBeNull();
+  });
+
+  it("a thrown error sets sanitized lastError and rethrows", async () => {
+    const lock = createSyncLock();
+    await expect(lock.run("sync", async () => {
+      throw new Error("GET https://x.com/a?token=abc failed");
+    })).rejects.toThrow("GET https://x.com/a?token=abc failed");
+    const err = lock.stats()["sync"]!.lastError;
+    expect(err).toBe("GET https://x.com/a?<redacted> failed");
+    expect(err).not.toContain("abc");
+    expect(lock.stats()["sync"]!.lastOk).toBeNull();
+  });
+
+  it("sanitizeError truncates long messages to 200 chars", async () => {
+    const lock = createSyncLock();
+    await lock.run("sync", async () => "bad", () => "x".repeat(500));
+    expect(lock.stats()["sync"]!.lastError!.length).toBe(200);
+  });
 });

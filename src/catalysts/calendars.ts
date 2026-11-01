@@ -101,6 +101,6 @@ async function syncEarningsDay(
   }
 }
 
-async function upsert(store: Pick<Store, "upsertCatalyst">, c: Omit<Catalyst, "id" | "createdAt" | "updatedAt" | "sourceUrl" | "observationId" | "dedupeKey" | "sourceTier" | "datePrecision" | "impactWeight"> & { sourceUrl?: string | null; observationId?: null; dedupeKey?: string }): Promise<void> {
+async function upsert(store: Pick<Store, "upsertCatalyst">, c: Omit<Catalyst, "id" | "createdAt" | "updatedAt" | "sourceUrl" | "observationId" | "dedupeKey" | "sourceTier" | "datePrecision"> & { sourceUrl?: string | null; observationId?: null; dedupeKey?: string }): Promise<void> {
   await store.upsertCatalyst({ ...c, sourceTier: 1, sourceUrl: c.sourceUrl ?? null, observationId: null, dedupeKey: c.dedupeKey ?? catalystDedupeKey(c) });
 }

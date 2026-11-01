@@ -1,8 +1,9 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { catalystDensity } from "../src/catalysts/density.js";
 import { rankCatalysts } from "../src/catalysts/ranked.js";
-import { IMPORTANCE, classifyEvent, macroSeries, scoreEvent, scoreParts, type EventClass } from "../src/scoring/importance.js";
+import { ALWAYS_SHOWN_MACRO, DEFAULT_VIEW_MIN_SCORE, IMPORTANCE, classifyEvent, isAlwaysShown, macroSeries, scoreEvent, scoreParts, type EventClass } from "../src/scoring/importance.js";
 import type { Catalyst } from "../src/types.js";
 
 const TODAY = "2026-03-01";
@@ -22,7 +23,6 @@ function cat(overrides: Partial<Catalyst> = {}): Catalyst {
     themes: [],
     affectedTickers: [],
     sourceUrl: null,
-    impactWeight: null,
     observationId: null,
     dedupeKey: "k",
     createdAt: TODAY,
@@ -140,8 +140,8 @@ describe("order sanity", () => {
   });
 
   it("rankCatalysts default view returns ids in that same order (FR comment close gated out at 1.8 < 4.0)", () => {
-    // GDP (5.4) ties the policy decision; kindRank puts macro first.
-    expect(rankCatalysts(rows, { asOf: TODAY, watchlist: [] }).map((r) => r.id)).toEqual(["fomc", "cpi", "gdp", "fr-d"]);
+    // GDP (5.4) ties the policy decision; kindRank puts macro first. PPI (3.6) rides in via ALWAYS_SHOWN_MACRO.
+    expect(rankCatalysts(rows, { asOf: TODAY, watchlist: [] }).map((r) => r.id)).toEqual(["fomc", "cpi", "gdp", "fr-d", "ppi"]);
     expect(rankCatalysts(rows, { asOf: TODAY, watchlist: [], all: true }).map((r) => r.id)).toEqual(["fomc", "cpi", "gdp", "fr-d", "ppi", "fr-c"]);
   });
 });
@@ -216,5 +216,68 @@ describe("default view gating", () => {
     const src = readFileSync("src/catalysts/ranked.ts", "utf8");
     expect(src).not.toContain("PINNED_MACRO");
     expect(src).not.toContain("isPinned");
+  });
+
+  it("not fomc: Fed-adjacent titles without a rate/policy decision are macro_other", () => {
+    for (const title of ["Powell speech at Brookings", "Fed Beige Book", "Fed stress test results", "Atlanta Fed GDPNow update", "FedEx earnings"]) {
+      expect(macroSeries({ dedupeKey: "x", title })).not.toBe("fomc");
+    }
+  });
+
+  it("is fomc: FOMC and fed/federal reserve rate or policy decisions", () => {
+    for (const title of ["FOMC statement", "Fed interest rate decision", "Federal Reserve policy decision"]) {
+      expect(macroSeries({ dedupeKey: "x", title })).toBe("fomc");
+    }
+  });
+
+  it("central-bank abbreviations need rate/policy/monetary context; full names do not", () => {
+    expect(macroSeries({ dedupeKey: "x", title: "BOC Aviation results" })).toBeNull();
+    expect(macroSeries({ dedupeKey: "x", title: "Bank of Canada rate decision" })).toBe("central_bank_other");
+    expect(macroSeries({ dedupeKey: "x", title: "BoC rate decision" })).toBe("central_bank_other");
+    expect(macroSeries({ dedupeKey: "x", title: "ECB monetary policy meeting" })).toBe("central_bank_other");
+  });
+
+  it("ALWAYS_SHOWN_MACRO covers the high-importance series but not jobless_claims", () => {
+    expect([...ALWAYS_SHOWN_MACRO].sort()).toEqual(
+      ["central_bank_other", "cpi", "fomc", "gdp", "jolts", "nfp", "pce", "ppi", "retail_sales"].sort(),
+    );
+    expect(ALWAYS_SHOWN_MACRO.has("jobless_claims")).toBe(false);
+  });
+
+  it("isAlwaysShown is macro-only and follows the series classification", () => {
+    expect(isAlwaysShown(cat({ ticker: null, kind: "macro", dedupeKey: "bls:CPI:2026-03-20", title: "Consumer Price Index" }))).toBe(true);
+    expect(isAlwaysShown(cat({ ticker: null, kind: "macro", dedupeKey: "x", title: "Initial jobless claims" }))).toBe(false);
+    expect(isAlwaysShown(cat({ ticker: null, kind: "election", title: "US midterm elections" }))).toBe(false);
+  });
+
+  it("PPI rows ride in the default view even with a low score; jobless claims (2) do not", () => {
+    const rows = rankCatalysts(
+      [
+        cat({ id: "ppi-est", ticker: null, kind: "macro", dedupeKey: "bls:PPI:2026-03-20", title: "Producer price index", datePrecision: "estimated", dateStart: "2026-03-20", dateEnd: "2026-03-20", confidence: 1 }),
+        cat({ id: "ppi-exact", ticker: null, kind: "macro", dedupeKey: "bls:PPI:2026-03-25", title: "Producer price index", confidence: 0.9 }),
+        cat({ id: "jc", ticker: null, kind: "macro", dedupeKey: "dol:other:2026-03-20", title: "Initial jobless claims", confidence: 1 }),
+      ],
+      { asOf: TODAY, watchlist: [] },
+    );
+    // estimated PPI scores 4 x 0.4 = 1.6, exact/0.9 scores 3.6: both below the 4.0 cutoff yet shown; jobless claims 2 is not.
+    expect(rows.map((r) => r.id)).toEqual(["ppi-exact", "ppi-est"]);
+    expect(rows.every((r) => r.score < DEFAULT_VIEW_MIN_SCORE)).toBe(true);
+  });
+});
+
+describe("impactWeight removal", () => {
+  it("no file under src/ or data/ mentions impactWeight", () => {
+    const files: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir)) {
+        const p = path.join(dir, entry);
+        if (statSync(p).isDirectory()) walk(p);
+        else files.push(p);
+      }
+    };
+    walk("src");
+    walk("data");
+    const offenders = files.filter((f) => readFileSync(f, "utf8").includes("impactWeight"));
+    expect(offenders).toEqual([]);
   });
 });

@@ -163,7 +163,7 @@ export function buildServer(store: Store, deps: PipelineDeps, opts: { lock?: Syn
       lock.recordSkip("source-poll");
       return reply.status(409).send({ error: "source_poll_running" });
     }
-    const result = await lock.run("source-poll", () => runSource(deps, source));
+    const result = await lock.run("source-poll", () => runSource(deps, source), (r) => r.error ?? null);
     return result === undefined ? reply.status(409).send({ error: "source_poll_running" }) : result;
   });
 

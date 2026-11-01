@@ -8,7 +8,6 @@
    "precision": "exact",
    "title": "USTR Section 301 China maritime/shipbuilding action suspension ends (through 11:59 p.m. ET Nov 9); port fees and crane tariffs resume unless USTR finalizes its proposed extension to 2027-01-09",
    "kind": "rule_effective",
-   "impactWeight": 3,
    "sourceUrl": "https://www.federalregister.gov/documents/2026/10/26/2026-21755/request-for-comments-on-further-suspension-of-section-301-action-chinas-targeting-of-the-maritime",
    "themes": [
     "shipping",
@@ -30,7 +29,6 @@
    "precision": "estimated",
    "title": "Section 232 wind turbines: Commerce/USTR negotiation update due to President (180 days after 2026-10-22 proclamation); further action possible if no agreement",
    "kind": "regulatory_decision",
-   "impactWeight": 2,
    "sourceUrl": "https://www.federalregister.gov/documents/2026/10/28/2026-22049/adjusting-imports-of-wind-turbines-and-their-parts-and-components-into-the-united-states",
    "themes": [
     "wind",
@@ -49,7 +47,6 @@
    "precision": "estimated",
    "title": "Section 232 robotics and industrial machinery: negotiation update due (180 days after 2026-10-28 proclamation); further action possible if no agreement",
    "kind": "regulatory_decision",
-   "impactWeight": 2,
    "sourceUrl": "https://www.federalregister.gov/documents/2026/11/02/2026-22385/adjusting-imports-of-robotics-industrial-machinery-and-their-parts-and-components-into-the-united",
    "themes": [
     "industrial machinery",
@@ -72,7 +69,6 @@
    "precision": "exact",
    "title": "US government funding deadline: continuing resolution (P.L. 119-103) expires; shutdown risk",
    "kind": "regulatory_decision",
-   "impactWeight": 3,
    "sourceUrl": "https://www.govinfo.gov/content/pkg/PLAW-119publ103/html/PLAW-119publ103.htm",
    "themes": [
     "fiscal",
@@ -87,7 +83,6 @@
    "precision": "exact",
    "title": "Section 232 polysilicon: minimum import prices plus 15% duty take effect 12:01 a.m. ET (Proclamation, FR 2026-16400)",
    "kind": "rule_effective",
-   "impactWeight": 2,
    "sourceUrl": "https://www.federalregister.gov/documents/2026/08/11/2026-16400/adjusting-imports-of-polysilicon-and-its-derivatives-into-the-united-states",
    "themes": [
     "solar",
@@ -109,7 +104,6 @@
    "precision": "exact",
    "title": "Section 232 drones: duty on UAS components rises to 25% at 12:01 a.m. ET (Proclamation, FR 2026-16979)",
    "kind": "rule_effective",
-   "impactWeight": 2,
    "sourceUrl": "https://www.federalregister.gov/documents/2026/08/19/2026-16979/adjusting-imports-of-unmanned-aircraft-systems-and-unmanned-aircraft-systems-components-into-the",
    "themes": [
     "drones",
@@ -129,7 +123,6 @@
    "precision": "exact",
    "title": "Section 301 China: extended product exclusions expire 11:59 p.m. ET unless extended (USTR notice, FR 2025-21671)",
    "kind": "rule_effective",
-   "impactWeight": 2,
    "sourceUrl": "https://www.federalregister.gov/documents/2025/12/01/2025-21671/notice-of-product-exclusion-extensions-chinas-acts-policies-and-practices-related-to-technology",
    "themes": [
     "China imports",

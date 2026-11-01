@@ -114,18 +114,15 @@ export interface Catalyst {
   /** 1 = primary source (newswire/IR/gov), 2 = reputable press, 3 = everything else. */
   sourceTier: 1 | 2 | 3;
   sourceUrl: string | null;
-  /** Placeholder for (historical move x implied move); null until measured. */
-  impactWeight: number | null;
   observationId: string | null;
   dedupeKey: string;
   createdAt: string;
   updatedAt: string;
 }
 
-/** What callers pass when upserting a catalyst: datePrecision/impactWeight are derived/defaulted by the store. */
-export type CatalystInput = Omit<Catalyst, "id" | "createdAt" | "updatedAt" | "datePrecision" | "impactWeight"> & {
+/** What callers pass when upserting a catalyst: datePrecision is derived/defaulted by the store. */
+export type CatalystInput = Omit<Catalyst, "id" | "createdAt" | "updatedAt" | "datePrecision"> & {
   datePrecision?: DatePrecision;
-  impactWeight?: number | null;
 };
 
 export interface Watchlist {
