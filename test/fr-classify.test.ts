@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { classify, hasOperativeMarker, operativeText, parseTextDates, roleDates, type FrApiDoc } from "../src/catalysts/fr-classify.js";
+import { abstractEffectStatements, classify, hasOperativeMarker, operativeText, parseTextDates, roleDates, type FrApiDoc } from "../src/catalysts/fr-classify.js";
 
 const WINDOW = { today: "2026-11-01", end: "2027-05-01" };
 
@@ -348,6 +348,42 @@ describe("fr-classify synthetic", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!.role).toBe("suspension_end");
     expect(rows[0]!.date).toBe("2026-12-04");
+  });
+
+  it("roleDates: suspension keeps other dates in the sentence; same-date non-suspension entries dropped", () => {
+    const rows = roleDates("Effective December 1, 2026, the requirements are suspended until March 1, 2027, and the exemption expires June 1, 2027.");
+    expect(rows.map((r) => [r.role, r.date]).sort()).toEqual([
+      ["effective", "2026-12-01"],
+      ["expiry", "2027-06-02"],
+      ["suspension_end", "2027-03-02"],
+    ]);
+    expect(rows.some((r) => r.date === "2027-03-02" && r.role !== "suspension_end")).toBe(false);
+  });
+
+  it('bareUntil corroboration pool: narrative abstract excluded, effect statements counted, bodyText never', () => {
+    const dates = "The rule remains in effect until December 15, 2026.";
+    // (a) abstract retells prior history → no corroboration → estimated
+    const a = classify(base({ dates, abstract: "A prior order previously provided that the rule remains in effect through December 15, 2026." }), WINDOW);
+    expect(a).toHaveLength(1);
+    expect(a[0]!.kind).toBe("rule_expiry");
+    expect(a[0]!.date).toBe("2026-12-16");
+    expect(a[0]!.datePrecision).toBe("estimated");
+    // (b) abstract states this rule's effect → corroborated → exact
+    const b = classify(base({ dates, abstract: "This rule is effective through December 15, 2026." }), WINDOW);
+    expect(b).toHaveLength(1);
+    expect(b[0]!.date).toBe("2026-12-16");
+    expect(b[0]!.datePrecision).toBe("exact");
+    // (c) effect wording only in bodyText → never corroborates → estimated
+    const c = classify(base({ dates, abstract: null, bodyText: "The rule is effective through December 15, 2026." }), WINDOW);
+    expect(c).toHaveLength(1);
+    expect(c[0]!.date).toBe("2026-12-16");
+    expect(c[0]!.datePrecision).toBe("estimated");
+  });
+
+  it('abstractEffectStatements: "prior order" narrative is stripped, "This rule is effective" is kept', () => {
+    const statements = abstractEffectStatements("A prior order previously provided X. This rule is effective through December 15, 2026.");
+    expect(statements).not.toContain("prior order");
+    expect(statements).toContain("This rule is effective");
   });
 
   it('bare "remains until" corroborated by a same-date effective clause → exact expiry', () => {

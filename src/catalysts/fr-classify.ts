@@ -110,6 +110,10 @@ const ROLE_EXPIRY_RE = new RegExp(
     String.raw`(${MONTH_FULL})\b`,
   "gi",
 );
+/** Abstract sentences recounting prior history, not effects of this document. */
+const NARRATIVE_RE = /\b(?:previous(?:ly)?|prior|earlier|former(?:ly)?|original(?:ly)?|supersed\w*|had\s+been|was\s+(?:set|scheduled)|published\s+(?:at|on|in)|issued\s+on)\b/i;
+/** Sentence split shared by roleDates and abstractEffectStatements. */
+const SENTENCE_SPLIT_RE = /(?<!\b[ap]\.m\.)(?<!\bSec\.)(?<!\bU\.S\.)(?<!\bNo\.)(?<=[.;])\s+/;
 /** "12:01 a.m. … <date>", "effective [on] <date>", "on or after <date>", "in force <date>" — effective that day. */
 const ROLE_EFFECTIVE_RE = new RegExp(String.raw`\b(?:12:01\s*a\.m\. [a-z ]{0,60}?(?:on\s+)?|effective(?:\s+on)?\s+(?:on\s+or\s+about\s+|approximately\s+)?|on\s+or\s+after\s+(?:on\s+or\s+about\s+|approximately\s+)?|in\s+force\s+(?:on\s+)?)(${MONTH_FULL})\b`, "gi");
 
@@ -156,7 +160,7 @@ export function roleDates(text: string): TextDate[] {
   const norm = text.replace(/\s+/g, " ");
   const out: TextDate[] = [];
   // a.m./p.m. excluded so time clauses aren't split mid-sentence.
-  for (const sentence of norm.split(/(?<!\b[ap]\.m\.)(?<!\bSec\.)(?<!\bU\.S\.)(?<!\bNo\.)(?<=[.;])\s+/)) {
+  for (const sentence of norm.split(SENTENCE_SPLIT_RE)) {
     if (/\bcomments?\b/i.test(sentence)) continue; // comment deadlines are not the doc's own effective role
     const vagueSentence = /within\s+\d+\s+days|\d+\s+days\s+(?:from|after)/i.test(sentence);
     const sent: TextDate[] = [];
@@ -182,18 +186,33 @@ export function roleDates(text: string): TextDate[] {
       const date = toIso(m[1]!);
       if (date) push(m, "effective", date);
     }
-    // Suspension wording overrides expiry in the same sentence ("suspended until X" is not an expiry).
-    if (!/\b(?:suspended|stayed|suspension)\b/i.test(sentence)) {
-      for (const m of sentence.matchAll(ROLE_EXPIRY_RE)) {
-        const base = toIso(m[1]!);
-        // start-of-day clauses (12:01 a.m.) lapse the date itself; bare/until/through clauses the next day.
-        if (base) push(m, "expiry", /12:01/.test(m[0]) ? base : nextDay(base), untilFlag(m) && !/12:01/.test(m[0]) ? true : undefined);
-      }
+    for (const m of sentence.matchAll(ROLE_EXPIRY_RE)) {
+      const base = toIso(m[1]!);
+      // start-of-day clauses (12:01 a.m.) lapse the date itself; bare/until/through clauses the next day.
+      if (base) push(m, "expiry", /12:01/.test(m[0]) ? base : nextDay(base), untilFlag(m) && !/12:01/.test(m[0]) ? true : undefined);
     }
-    // A sentence that yielded a suspension_end keeps only those (drops the 12:01 effective from the same clause).
-    out.push(...(sent.some((p) => p.role === "suspension_end") ? sent.filter((p) => p.role === "suspension_end") : sent));
+    if (sent.some((p) => p.role === "suspension_end")) {
+      // Suspension wording wins only on its own date: non-suspension entries dated elsewhere stay
+      // (e.g. "effective X … suspended until Y … expires Z" keeps all three).
+      const suspDates = new Set(sent.filter((p) => p.role === "suspension_end").map((p) => p.date));
+      out.push(...sent.filter((p) => p.role === "suspension_end" || !suspDates.has(p.date)));
+    } else if (/\b(?:suspended|stayed|suspension)\b/i.test(sentence)) {
+      // Suspension wording with no parsed end date suppresses expiry in the same sentence.
+      out.push(...sent.filter((p) => p.role !== "expiry"));
+    } else {
+      out.push(...sent);
+    }
   }
   return out;
+}
+
+/** Abstract sentences that are statements of effect (narrative/prior-history sentences dropped). Pure. */
+export function abstractEffectStatements(abstract: string): string {
+  return abstract
+    .replace(/\s+/g, " ")
+    .split(SENTENCE_SPLIT_RE)
+    .filter((s) => !NARRATIVE_RE.test(s))
+    .join(" ");
 }
 
 /** Classify one FR document into in-window candidate events. Pure. */
@@ -217,7 +236,9 @@ export function classify(doc: FrApiDoc, window: { today: string; end: string }):
   // (operative or preamble) pins the same date.
   const corroborated = (list: TextDate[]): boolean =>
     list.every((p) => !p.bareUntil || list.some((q) => q.date === p.date && !q.bareUntil));
-  const bareOk = corroborated([...opAll, ...preCands]);
+  // Corroboration pool: operative dates plus effect statements from the abstract only — never the
+  // narrative abstract sentences, bodyText, or the presidential pre-marker body.
+  const bareOk = corroborated([...opAll, ...roleDates(abstractEffectStatements(doc.abstract ?? ""))]);
 
   if (doc.type === "Presidential Document") {
     // Presidential: "in effect" dates come from role-word clauses in the text, not the API.
