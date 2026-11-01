@@ -99,7 +99,7 @@ describe("syncCalendars", () => {
     const fetchImpl = vi.fn(async () => { throw new Error("boom"); });
     const s = store();
     const log = vi.fn();
-    const counts = await syncCalendars(s as never, { ...opts, fetch: fetchImpl as unknown as typeof fetch, log });
+    const counts = await syncCalendars(s as never, { ...opts, fetch: fetchImpl as unknown as typeof fetch, sleep: async () => {}, log });
     expect(counts).toEqual({ earnings: 0, macro: 0 });
     expect(log.mock.calls.length).toBeGreaterThan(0);
     expect(s.upsertCatalyst).not.toHaveBeenCalled();

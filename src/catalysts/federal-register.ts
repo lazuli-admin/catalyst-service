@@ -8,6 +8,10 @@ import { curatedFrDocNumbers } from "./policy.js";
 const TIMEOUT_MS = 15_000;
 const FR_REQUEST_DELAY_MS = 250;
 const MAX_FR_PAGES = 20;
+/** FR API silently caps results at 10000 docs; hitting it means the query window is too broad. */
+export const FR_RESULT_CAP = 10000;
+/** Retry attempts for transient failures (429/5xx/network). */
+export const FR_MAX_ATTEMPTS = 3;
 
 /** slug -> agency label (used in catalyst titles). Relevance is decided by TOPIC, never agency; tickers are hand-curated, illustrative, reviewed manually (see src/topics.ts). */
 export const FR_AGENCIES: Record<string, { label: string }> = {
@@ -98,12 +102,39 @@ export async function syncFederalRegister(
   };
   const fetchResponse = async (url: string) => {
     await polite();
-    const res = await fetchImpl(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res;
+    for (let attempt = 1; attempt <= FR_MAX_ATTEMPTS; attempt++) {
+      let res: Response;
+      try {
+        res = await fetchImpl(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+      } catch (err) {
+        if (attempt < FR_MAX_ATTEMPTS) {
+          await sleep(1000 * Math.pow(2, attempt - 1));
+          continue;
+        }
+        throw err;
+      }
+      if (res.ok) return res;
+      const status = res.status;
+      if (status === 429 || status >= 500) {
+        if (attempt < FR_MAX_ATTEMPTS) {
+          const backoff = 1000 * Math.pow(2, attempt - 1);
+          let delay = backoff;
+          const retryAfter = res.headers?.get?.("retry-after");
+          if (retryAfter) {
+            const seconds = parseInt(retryAfter, 10);
+            if (!Number.isNaN(seconds)) delay = Math.min(Math.max(seconds * 1000, backoff), 30_000);
+          }
+          await sleep(delay);
+          continue;
+        }
+        throw new Error(`HTTP ${status}`);
+      }
+      throw new Error(`HTTP ${status}`);
+    }
+    throw new Error("unreachable");
   };
-  const fetchJson = async (url: string): Promise<{ results?: unknown[]; total_pages?: number }> =>
-    (await fetchResponse(url)).json() as { results?: unknown[]; total_pages?: number };
+  const fetchJson = async (url: string): Promise<{ results?: unknown[]; total_pages?: number; count?: number }> =>
+    (await fetchResponse(url)).json() as { results?: unknown[]; total_pages?: number; count?: number };
 
   const queries: FrQueryReport[] = [];
   const skippedCurated = new Set<string>();
@@ -114,6 +145,11 @@ export async function syncFederalRegister(
         `https://www.federalregister.gov/api/v1/documents.json?${target.conditions}&conditions[publication_date][gte]=${gte}&per_page=1000&order=oldest&page=${page}&${fields}`;
       for (let page = 1; ; page++) {
         const body = await fetchJson(mkUrl(page));
+        if (typeof body.count === "number" && body.count >= FR_RESULT_CAP) {
+          q.ok = false;
+          q.error = `result cap: count ${body.count} >= ${FR_RESULT_CAP}`;
+          break;
+        }
         if (q.totalPages === null && typeof body.total_pages === "number") q.totalPages = body.total_pages;
         const results = (body.results ?? []) as Record<string, unknown>[];
         q.pages = page;
@@ -184,7 +220,14 @@ export async function syncFederalRegister(
             });
           }
         }
-        if (results.length === 0) break; // stop early on an empty page
+        if (results.length === 0) {
+          // An empty page before the declared total_pages means silently missing data; flag it.
+          if (q.totalPages !== null && page < q.totalPages) {
+            q.ok = false;
+            q.error = `empty page ${page} of ${q.totalPages}`;
+          }
+          break; // stop early on an empty page
+        }
         if (q.totalPages !== null && page >= q.totalPages) break;
         if (page >= MAX_FR_PAGES) {
           q.ok = false;

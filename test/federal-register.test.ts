@@ -9,9 +9,10 @@ import { memoryStore } from "./helpers.js";
 import { isRelevant, topicTags } from "../src/topics.js";
 import type { Catalyst } from "../src/types.js";
 
-const res = (body: unknown, ok = true) => ({
+const res = (body: unknown, ok = true, status = ok ? 200 : 500, headers: Record<string, string> = {}) => ({
   ok,
-  status: ok ? 200 : 500,
+  status,
+  headers: { get: (name: string) => { const k = Object.keys(headers).find((h) => h.toLowerCase() === name.toLowerCase()); return k ? headers[k] : null; } },
   json: async () => body,
   text: async () => (typeof body === "string" ? body : JSON.stringify(body)),
 });
@@ -665,5 +666,121 @@ describe("curated FR doc number skipping", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("FR result cap, empty-page guard, and bounded retry", () => {
+  const doc = { title: "Advanced computing chip rule", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "rt-1" };
+
+  // Fetch mock that returns a per-slug sequence of responses, one per attempt on that slug's URLs.
+  function perSlugAttempt(handlers: Record<string, (attempt: number, url: string) => unknown>) {
+    const attempts = new Map<string, number>();
+    return vi.fn(async (url: string) => {
+      const slug = Object.keys(handlers).find((s) => url.includes(s));
+      if (!slug) return res({ results: [] });
+      const n = (attempts.get(slug) ?? 0) + 1;
+      attempts.set(slug, n);
+      return handlers[slug]!(n, url);
+    });
+  }
+
+  function recordingSleep() {
+    const delays: number[] = [];
+    const sleep = vi.fn(async (ms: number) => {
+      delays.push(ms);
+    });
+    return { sleep, delays };
+  }
+
+  const bisCalls = (fetchImpl: ReturnType<typeof perSlugAttempt>) =>
+    fetchImpl.mock.calls.filter(([u]) => String(u).includes(BIS)).length;
+
+  it("count >= 10000 on a query -> query ok:false with 'result cap', complete false, stale fr row NOT purged", async () => {
+    const fetchImpl = perSlugAttempt({ [BIS]: () => res({ results: [], count: 10000 }) });
+    const s = store();
+    s.listStaleCatalysts.mockResolvedValue([{ dedupeKey: "fr:stale-1:2026-12-01", title: "Stale row" }]);
+    const { sleep } = recordingSleep();
+    await syncFederalRegister(s, { ...opts, sleep, curatedDocNumbers: new Set(), fetch: fetchImpl as unknown as typeof fetch });
+    const report = getLastFrSyncReport();
+    expect(report!.complete).toBe(false);
+    expect(report!.queries.find((q) => q.name === "BIS")).toMatchObject({ ok: false, error: "result cap: count 10000 >= 10000" });
+    expect(s.listStaleCatalysts).not.toHaveBeenCalled();
+    expect(s.purgeStaleCatalysts).not.toHaveBeenCalled();
+  });
+
+  it("empty page before total_pages (total_pages 3, page 2 empty) -> ok:false 'empty page 2 of 3', complete false, no purge", async () => {
+    const fetchImpl = mockFetch({
+      [BIS]: (page: number) =>
+        page === 1 ? { results: [{ ...doc, document_number: "ep-1" }], total_pages: 3 } : { results: [] },
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, sleep: async () => {}, curatedDocNumbers: new Set(), fetch: fetchImpl as unknown as typeof fetch });
+    const report = getLastFrSyncReport();
+    expect(report!.complete).toBe(false);
+    expect(report!.queries.find((q) => q.name === "BIS")).toMatchObject({ ok: false, error: "empty page 2 of 3" });
+    expect(s.purgeStaleCatalysts).not.toHaveBeenCalled();
+  });
+
+  it("empty first page with total_pages 0 -> normal complete end, purge runs", async () => {
+    const fetchImpl = mockFetch({ [BIS]: { results: [], total_pages: 0 } });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, sleep: async () => {}, curatedDocNumbers: new Set(), fetch: fetchImpl as unknown as typeof fetch });
+    expect(getLastFrSyncReport()!.complete).toBe(true);
+    expect(s.purgeStaleCatalysts).toHaveBeenCalledTimes(4);
+  });
+
+  it("429 with Retry-After: 2 then 200 -> succeeds, sleep called with 2000 plus politeness delays, 2 fetch calls", async () => {
+    const fetchImpl = perSlugAttempt({
+      // Page 1: 429 then 200; total_pages 1 stops paging there.
+      [BIS]: (attempt, url) => /[?&]page=([2-9]|\d+)/.exec(url)![1] !== "1" ? res({ results: [] }) : attempt === 1 ? res({ results: [] }, false, 429, { "Retry-After": "2" }) : res({ results: [doc], total_pages: 1 }),
+    });
+    const s = store();
+    const { sleep, delays } = recordingSleep();
+    await syncFederalRegister(s, { ...opts, sleep, curatedDocNumbers: new Set(), fetch: fetchImpl as unknown as typeof fetch });
+    expect(catalysts(s).map((r) => r.dedupeKey)).toEqual(["fr:rt-1:2026-11-05"]);
+    expect(getLastFrSyncReport()!.complete).toBe(true);
+    expect(bisCalls(fetchImpl)).toBe(2);
+    expect(delays[0]).toBe(2000);
+    // Only the 2000ms retry delay and normal 250ms politeness delays remain.
+    expect(delays.every((d) => d === 2000 || d === 250)).toBe(true);
+    expect(delays.filter((d) => d === 2000)).toHaveLength(1);
+  });
+
+  it("503, 503, 200 -> succeeds with exponential backoff delays 1000 and 2000", async () => {
+    const fetchImpl = perSlugAttempt({
+      // Page 1: 503, 503, then 200; total_pages 1 stops paging there.
+      [BIS]: (attempt, url) => /[?&]page=([2-9]|\d+)/.exec(url)![1] !== "1" ? res({ results: [] }) : attempt <= 2 ? res({ results: [] }, false, 503) : res({ results: [doc], total_pages: 1 }),
+    });
+    const s = store();
+    const { sleep, delays } = recordingSleep();
+    await syncFederalRegister(s, { ...opts, sleep, curatedDocNumbers: new Set(), fetch: fetchImpl as unknown as typeof fetch });
+    expect(catalysts(s).map((r) => r.dedupeKey)).toEqual(["fr:rt-1:2026-11-05"]);
+    expect(getLastFrSyncReport()!.complete).toBe(true);
+    expect(bisCalls(fetchImpl)).toBe(3);
+    expect(delays.slice(0, 2)).toEqual([1000, 2000]);
+  });
+
+  it("500 three times -> query ok:false with 'HTTP 500' after exactly 3 attempts", async () => {
+    const fetchImpl = perSlugAttempt({ [BIS]: () => res({ results: [] }, false, 500) });
+    const s = store();
+    const { sleep, delays } = recordingSleep();
+    await syncFederalRegister(s, { ...opts, sleep, curatedDocNumbers: new Set(), fetch: fetchImpl as unknown as typeof fetch });
+    const report = getLastFrSyncReport();
+    expect(report!.complete).toBe(false);
+    expect(report!.queries.find((q) => q.name === "BIS")).toMatchObject({ ok: false, error: "HTTP 500" });
+    expect(bisCalls(fetchImpl)).toBe(3);
+    expect(delays.slice(0, 2)).toEqual([1000, 2000]);
+  });
+
+  it("404 -> no retry (1 attempt), query ok:false with 'HTTP 404'", async () => {
+    const fetchImpl = perSlugAttempt({ [BIS]: () => res({ results: [] }, false, 404) });
+    const s = store();
+    const { sleep, delays } = recordingSleep();
+    await syncFederalRegister(s, { ...opts, sleep, curatedDocNumbers: new Set(), fetch: fetchImpl as unknown as typeof fetch });
+    const report = getLastFrSyncReport();
+    expect(report!.complete).toBe(false);
+    expect(report!.queries.find((q) => q.name === "BIS")).toMatchObject({ ok: false, error: "HTTP 404" });
+    expect(bisCalls(fetchImpl)).toBe(1);
+    expect(delays.every((d) => d === 250)).toBe(true);
   });
 });
