@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 import { computeFrRecall, rowIsFetched, type FrBlindRow } from "../src/recall.js";
-import { isRelevant, TOPICS } from "../src/topics.js";
+import { isRelevant, topicTags, TOPICS } from "../src/topics.js";
 import { TOPIC_KEEP_EXAMPLES } from "./fixtures/topic-keep-examples.js";
 
 // both fr-blind fixtures are regression sets (may have informed tuning)
@@ -96,6 +96,18 @@ describe("fr-regression per-doc", () => {
   });
 });
 
+interface RealDocRow {
+  topic: string;
+  document_number: string;
+  type: string;
+  title: string;
+  abstract: string | null;
+}
+
+const realDocs = JSON.parse(
+  readFileSync(new URL("./fixtures/topic-real-docs.json", import.meta.url), "utf8"),
+) as RealDocRow[];
+
 describe("every topic matches at least one fixture doc", () => {
   const corpus: string[] = [];
   for (const rows of [blind1, blind2, regression]) {
@@ -106,9 +118,25 @@ describe("every topic matches at least one fixture doc", () => {
     }
   }
   corpus.push(...TOPIC_KEEP_EXAMPLES);
+  for (const doc of realDocs) {
+    corpus.push(`${doc.title} ${doc.abstract ?? ""}`);
+  }
 
   test.each(TOPICS)("topic $id matches at least one fixture doc", (topic) => {
     const found = corpus.some((s) => topic.patterns.some((p) => p.test(s)));
     expect(found, `Topic '${topic.id}' does not match any fixture doc or keep example`).toBe(true);
+  });
+
+  test("real FR docs back their topics", () => {
+    for (const doc of realDocs) {
+      const frDoc = {
+        title: doc.title,
+        abstract: doc.abstract,
+        type: doc.type,
+        documentNumber: doc.document_number,
+      };
+      expect(isRelevant(frDoc), doc.title).toBe(true);
+      expect(topicTags(frDoc).topics, doc.title).toContain(doc.topic);
+    }
   });
 });

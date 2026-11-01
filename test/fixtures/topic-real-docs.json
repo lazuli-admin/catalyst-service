@@ -1,0 +1,34 @@
+[
+ {
+  "topic": "banking-capital",
+  "document_number": "2026-20246",
+  "type": "Rule",
+  "agency": "Federal Reserve System",
+  "title": "Modifications to the Capital Plan Rule and Stress Capital Buffer Requirement",
+  "abstract": "The Board is adopting a final rule to amend the calculation of the Board's stress capital buffer requirement applicable to certain large bank holding companies, savings and loan holding companies, U.S. intermediate holding companies of foreign banking organizations, and nonbank financial companies supervised by the Board to reduce the volatility of the stress capital buffer requirement. The final rule uses the average of the maximum common equity tier 1 capital ratio declines projected in each of the Board's prior two annual supervisory stress tests to inform a firm's stress capital buffer requirement. The final rule also extends the annual effective date of the stress capital buffer requirement by one quarter, to January 1, to provide additional time for firms to comply with the requirement. In addition, the Board is adopting changes to the FR Y-14A/Q/M reports to collect additional net income data that would improve the accuracy of the stress capital buffer requirement calculation. The final rule also amends the Stress Testing Policy Statement to remove the phase-in of highly material supervisory model changes."
+ },
+ {
+  "topic": "banking-capital",
+  "document_number": "2025-21626",
+  "type": "Rule",
+  "agency": "Treasury Department",
+  "title": "Regulatory Capital Rule: Modifications to the Enhanced Supplementary Leverage Ratio Standards for U.S. Global Systemically Important Bank Holding Companies and Their Subsidiary Depository Institutions; Total Loss-Absorbing Capacity and Long-Term Debt Requirements for U.S. Global Systemically Important Bank Holding Companies",
+  "abstract": "The Office of the Comptroller of the Currency (OCC), Board of Governors of the Federal Reserve System (Board), and Federal Deposit Insurance Corporation (FDIC) are adopting a final rule to modify the enhanced supplementary leverage ratio standards applicable to U.S. bank holding companies identified as global systemically important bank holding companies (GSIBs), their subsidiary depository institutions that are Board- or FDIC-regulated, and national banks and Federal savings associations that are subsidiaries of a U.S. top-tier bank holding company with total consolidated assets of more than $700 billion or assets under custody of more than $10 trillion (together with Board- and FDIC-regulated subsidiary depository institutions of GSIBs, covered depository institutions). These modifications are intended to help ensure that the enhanced supplementary leverage ratio standards serve as a backstop to risk-based capital requirements rather than a frequently binding constraint, thus reducing potential disincentives for GSIBs and covered depository institutions to participate in low-risk, low-return activities. The Board is also finalizing conforming amendments to its total loss-absorbing capacity and long-term debt requirements. In addition, the Board is making conforming amendments to relevant regulatory reporting forms, and the Board and FDIC are making final certain technical corrections to the capital rule and the prompt corrective action framework. Banking organizations subject to the final rule may elect to early adopt the final rule as of January 1, 2026."
+ },
+ {
+  "topic": "consumer-retail-tariffs",
+  "document_number": "2026-07473",
+  "type": "Proposed Rule",
+  "agency": "Federal Trade Commission",
+  "title": "Rule on Unfair or Deceptive Fees in Online Food Delivery Services",
+  "abstract": "The Federal Trade Commission (\"Commission\") proposes to commence a rulemaking proceeding to address certain unfair or deceptive acts or practices relating to fees and charges for food and grocery items ordered through online delivery platforms. The Commission is soliciting written comment, data, and argument concerning the need for such a rulemaking to prevent persons, entities, and organizations from engaging in such unfair or deceptive acts or practices."
+ },
+ {
+  "topic": "consumer-retail-tariffs",
+  "document_number": "2026-17926",
+  "type": "Proposed Rule",
+  "agency": "Homeland Security Department",
+  "title": "Heightened Import Disclosures for Supply Chain Visibility",
+  "abstract": "U.S. Customs and Border Protection (CBP) is considering amending its regulations to give CBP greater visibility into the supply chains of goods imported into the United States. CBP is seeking comments on new requirements enhancing visibility into the parties involved in the importation of goods; integrating innovative technical solutions for the tracing of supply chains of those goods; and collecting foreign export documentation that foreign exporters are required to submit to the foreign customs authority prior to the exportation of those goods to the United States. With these proposals, CBP seeks to more effectively detect and interdict illicit importations, especially those that are illegally transshipped to evade compliance with U.S. customs and trade laws."
+ }
+]
