@@ -271,7 +271,7 @@ export const NOISE_PATTERNS: RegExp[] = [
   // marine-mammal incidental take authorizations (e.g. for cable landing construction)
   /incidental take|marine mammals?/i,
   // annual presidential continuation notices ("Continuation of the National Emergency With Respect to ...")
-  /^continuation of the national emergency\b/i,
+  /^continuation of the national emergency\b(?![^]*\band\s+(?:expan|modif|amend|impos|addition|new))/i,
   // technical corrections are noise only when the correction is the whole change (kept when paired with additions, e.g. "and Technical Corrections" or "Technical Correction and ...")
   /^(?!.*(\btechnical corrections?\s+(and|&)\s+\w|\b(and|&)\s+technical corrections?\b)).*\btechnical corrections?\b/i,
 ];

@@ -307,6 +307,9 @@ describe("other noise patterns", () => {
 
   it("drops annual continuation-of-national-emergency notices, keeps declaring/expanding national emergencies", () => {
     expect(isNoise({ title: "Continuation of the National Emergency With Respect to Example Country" })).toBe(true);
+    // expanded-scope/imposition continuations are substantive, not annual boilerplate
+    expect(isNoise({ title: "Continuation of the National Emergency With Respect to the PRC and Expansion of Scope" })).toBe(false);
+    expect(isNoise({ title: "Continuation of the National Emergency With Respect to Example Country and Imposition of Additional Tariffs" })).toBe(false);
     const keep1 = "Declaring a National Emergency With Respect to Example Imports";
     expect(isNoise({ title: keep1 })).toBe(false);
     const keep2 = "Expanding the Scope of the National Emergency With Respect to Example Country";
