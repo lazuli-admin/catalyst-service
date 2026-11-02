@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  COMPANY_UNIVERSE,
   buildSecUniverse,
   buildUniverse,
   consentPartyTickers,
@@ -12,7 +11,6 @@ const SEVITA_BTSG =
   "Sevita and BrightSpring; Analysis of Proposed Agreement Containing Consent Orders To Aid Public Comment";
 const AUROBINDO_LANNETT =
   "Aurobindo and Lannett; Analysis of Proposed Agreement Containing Consent Orders To Aid Public Comment";
-const BLACKROCK_TITLE = "BlackRock, Inc. and iShares Bitcoin Trust; Analysis of Proposed Agreement Containing Consent Orders To Aid Public Comment";
 
 describe("SEC_COMPANIES", () => {
   it("loads companies from the snapshot", () => {
