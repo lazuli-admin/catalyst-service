@@ -527,6 +527,45 @@ describe("fr-classify presidential operative markers", () => {
     expect(rows[0]!.datePrecision).toBe("exact");
   });
 
+  it("marker 'do proclaim that' (Proclamation proclamation clause) opens the operative part", () => {
+    const d = presDoc(
+      "NOW, THEREFORE, I, DONALD J. TRUMP, President of the United States of America, by the authority vested in me by section 320301 of title 54, United States Code, do proclaim that the boundaries of the Bears Ears National Monument are hereby modified as follows.",
+    );
+    expect(hasOperativeMarker(d)).toBe(true);
+    const { operative } = operativeText(d);
+    expect(operative.replace(/\s+/g, " ").trim().startsWith("NOW, THEREFORE, I, DONALD")).toBe(true);
+  });
+
+  it("marker 'NOW, THEREFORE, I ... proclaim' (Bears Ears 2026-14548, no 'do') opens the operative part", () => {
+    // FR raw text: line breaks and indentation inside the operative clause.
+    const d = presDoc(
+      `NOW, THEREFORE, I, DONALD J. TRUMP, President of the United States of
+      America, by the authority vested in me by section 320301 of title 54,
+      United States Code, proclaim that the boundaries of the Bears Ears
+      National Monument are hereby modified as follows.`,
+    );
+    expect(hasOperativeMarker(d)).toBe(true);
+    const { operative } = operativeText(d);
+    expect(operative.replace(/\s+/g, " ").trim().startsWith("NOW, THEREFORE")).toBe(true);
+  });
+
+  it("near-miss 'NOW, THEREFORE, I find that ...' (no proclaim) is not a marker", () => {
+    const d = presDoc("NOW, THEREFORE, I find that the program should continue.");
+    expect(hasOperativeMarker(d)).toBe(false);
+  });
+
+  it("marker 'do hereby proclaim' opens the operative part", () => {
+    const d = presDoc("NOW, THEREFORE, I, DONALD J. TRUMP, President of the United States of America, do hereby proclaim that November 9, 2026 shall be a day of observance.");
+    expect(hasOperativeMarker(d)).toBe(true);
+    const { operative } = operativeText(d);
+    expect(operative.replace(/\s+/g, " ").trim().startsWith("NOW, THEREFORE, I, DONALD")).toBe(true);
+  });
+
+  it("near-miss 'the President may proclaim' (no 'do') is not a marker", () => {
+    const d = presDoc("Under this order the President may proclaim such modifications as are appropriate.");
+    expect(hasOperativeMarker(d)).toBe(false);
+  });
+
   it("presidential doc without any marker: hasOperativeMarker false and rows estimated", () => {
     const d = presDoc("The duties shall apply 12:01 a.m. eastern time on November 9, 2026.");
     expect(hasOperativeMarker(d)).toBe(false);

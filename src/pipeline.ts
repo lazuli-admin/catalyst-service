@@ -81,7 +81,15 @@ async function mineCatalysts(deps: PipelineDeps, observation: Observation, judgm
     for (const c of extracted) {
       const decision = acceptCatalyst(c, tier, today);
       if (!decision) continue;
-      await deps.store.upsertCatalyst({ ...c, status: decision === "lead" ? "lead" : c.status, sourceTier: tier, sourceUrl: observation.url, observationId: observation.id, dedupeKey: catalystDedupeKey(c) });
+      try {
+        await deps.store.upsertCatalyst({ ...c, status: decision === "lead" ? "lead" : c.status, sourceTier: tier, sourceUrl: observation.url, observationId: observation.id, dedupeKey: catalystDedupeKey(c) });
+      } catch (err) {
+        if (typeof err === 'object' && err !== null && 'message' in err && typeof err.message === 'string' && err.message.startsWith('rejected catalyst')) {
+          // Skip catalysts rejected due to legacy title keys
+          continue;
+        }
+        throw err;
+      }
     }
     if (extracted.length > 0) deps.log?.(`catalysts: extracted ${extracted.length} from ${observation.title}`);
   } catch (err) {

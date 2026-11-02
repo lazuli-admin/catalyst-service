@@ -5,8 +5,11 @@
 // informed by it), not a blind holdout.
 // fr-blind-2 (test/fixtures/fr-blind-2.json, seed-7 draw) is ALSO a REGRESSION set, not a
 // blind holdout, since it may have informed topic tuning.
-import { FR_AGENCIES } from "./catalysts/federal-register.js";
-import { isRelevant } from "./topics.js";
+import { FR_AGENCIES, horizonEnd } from "./catalysts/federal-register.js";
+import { classify, proceduralReason, type FrApiDoc } from "./catalysts/fr-classify.js";
+import { rankCatalysts } from "./catalysts/ranked.js";
+import type { Catalyst } from "./types.js";
+import { isNoise, isRelevant, topicTags } from "./topics.js";
 
 export interface FrBlindRow {
   document_number: string;
@@ -18,6 +21,9 @@ export interface FrBlindRow {
   relevant: boolean;
   borderline: boolean;
   reason: string;
+  effective_on?: string | null;
+  comments_close_on?: string | null;
+  dates?: string | null;
 }
 
 /** FR_AGENCIES labels, keyed by slug. */
@@ -53,6 +59,10 @@ export interface RecallCounts {
   precision: number;
   fnRows: FrBlindRow[];
   fpRows: FrBlindRow[];
+  dvTp: number;
+  dvFp: number;
+  dvPrecision: number;
+  dvFpRows: FrBlindRow[];
 }
 
 export interface FrRecall {
@@ -61,10 +71,51 @@ export interface FrRecall {
   borderline: { fetched: boolean; predicted: boolean; labeledRelevant: boolean; title: string }[];
 }
 
+/** Whether a doc the sync admits would survive the default view (rank gate) as of its publication date. */
+export function inDefaultView(row: FrBlindRow): boolean {
+  const firstAgency = row.agency.split(";")[0]?.trim() ?? "";
+  const doc: FrApiDoc = {
+    title: row.title,
+    abstract: row.abstract,
+    type: row.type,
+    document_number: row.document_number,
+    agencyLabel: row.type === "Presidential Document" ? "President" : DISPLAY_TO_LABEL[firstAgency] ?? firstAgency,
+    dates: row.dates ?? null,
+    effective_on: row.effective_on ?? null,
+    comments_close_on: row.comments_close_on ?? null,
+    html_url: null,
+  };
+  if (isNoise(doc) || !isRelevant(doc) || proceduralReason(doc)) return false;
+  const events = classify(doc, { today: row.publication_date, end: horizonEnd(row.publication_date, 180) });
+  const tags = topicTags(doc);
+  const cats: Catalyst[] = events.map((ev) => ({
+    id: "dv",
+    ticker: null,
+    title: ev.title,
+    kind: ev.kind,
+    status: "scheduled",
+    dateStart: ev.date,
+    dateEnd: ev.date,
+    datePrecision: ev.datePrecision,
+    dateSource: ev.dateSource,
+    confidence: 0.9,
+    themes: tags.themes,
+    affectedTickers: tags.affectedTickers,
+    sourceTier: 1,
+    sourceUrl: ev.sourceUrl,
+    observationId: null,
+    dedupeKey: ev.dedupeKey,
+    createdAt: "",
+    updatedAt: "",
+  }));
+  return rankCatalysts(cats, { asOf: row.publication_date }).length > 0;
+}
+
 function metrics(rows: FrBlindRow[]): RecallCounts {
-  let tp = 0, fn = 0, fp = 0, tn = 0;
+  let tp = 0, fn = 0, fp = 0, tn = 0, dvTp = 0, dvFp = 0;
   const fnRows: FrBlindRow[] = [];
   const fpRows: FrBlindRow[] = [];
+  const dvFpRows: FrBlindRow[] = [];
   for (const row of rows) {
     const predicted = isRelevant({
       title: row.title,
@@ -72,6 +123,10 @@ function metrics(rows: FrBlindRow[]): RecallCounts {
       type: row.type,
       documentNumber: row.document_number,
     });
+    if (predicted && inDefaultView(row)) {
+      if (row.relevant) dvTp += 1;
+      else { dvFp += 1; dvFpRows.push(row); }
+    }
     if (row.relevant) {
       if (predicted) tp += 1;
       else { fn += 1; fnRows.push(row); }
@@ -87,6 +142,9 @@ function metrics(rows: FrBlindRow[]): RecallCounts {
     recall: tp + fn > 0 ? tp / (tp + fn) : 0,
     precision: tp + fp > 0 ? tp / (tp + fp) : 0,
     fnRows, fpRows,
+    dvTp, dvFp,
+    dvPrecision: dvTp + dvFp > 0 ? dvTp / (dvTp + dvFp) : 0,
+    dvFpRows,
   };
 }
 

@@ -40,24 +40,24 @@ describe("catalysts db", () => {
 
   it("upsert updates title at equal tier, keeps old title at worse tier", async () => {
     const store = await memoryStore();
-    const a = await store.upsertCatalyst({ ...base, title: "FOMC meeting" });
-    const b = await store.upsertCatalyst({ ...base, title: "FOMC renamed" });
+    const a = await store.upsertCatalyst({ ...base, title: "FOMC meeting", sourceUrl: "https://www.sec.gov/Archives/edgar/data/1018724/000162828024002399/tsla-20231231.htm" });
+    const b = await store.upsertCatalyst({ ...base, title: "FOMC renamed", sourceUrl: "https://www.sec.gov/Archives/edgar/data/1018724/000162828024002399/tsla-20231231.htm" });
     expect(b.id).toBe(a.id);
     expect(b.title).toBe("FOMC renamed");
 
-    const c = await store.upsertCatalyst({ ...base, title: "FOMC worse tier", sourceTier: 2 });
+    const c = await store.upsertCatalyst({ ...base, title: "FOMC worse tier", sourceUrl: "https://www.reuters.com/some-article" });
     expect(c.id).toBe(a.id);
     expect(c.title).toBe("FOMC renamed");
   });
 
   it("upsert updates kind at equal tier, keeps old kind at worse tier", async () => {
     const store = await memoryStore();
-    const a = await store.upsertCatalyst({ ...base, kind: "regulatory_decision" });
-    const b = await store.upsertCatalyst({ ...base, kind: "comment_close" });
+    const a = await store.upsertCatalyst({ ...base, kind: "regulatory_decision", sourceUrl: "https://www.sec.gov/Archives/edgar/data/1018724/000162828024002399/tsla-20231231.htm" });
+    const b = await store.upsertCatalyst({ ...base, kind: "comment_close", sourceUrl: "https://www.sec.gov/Archives/edgar/data/1018724/000162828024002399/tsla-20231231.htm" });
     expect(b.id).toBe(a.id);
     expect(b.kind).toBe("comment_close");
 
-    const c = await store.upsertCatalyst({ ...base, kind: "earnings", sourceTier: 3 });
+    const c = await store.upsertCatalyst({ ...base, kind: "earnings", sourceUrl: "https://www.reuters.com/some-article" });
     expect(c.id).toBe(a.id);
     expect(c.kind).toBe("comment_close");
   });

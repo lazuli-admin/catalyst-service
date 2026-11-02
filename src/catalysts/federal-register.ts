@@ -2,7 +2,7 @@
 import type { Store } from "../db.js";
 import { errorMessage } from "../util.js";
 import { isNoise, isRelevant, NOISE_PATTERNS, topicTags } from "../topics.js";
-import { classify, hasOperativeMarker, type FrApiDoc } from "./fr-classify.js";
+import { classify, hasOperativeMarker, type FrApiDoc, proceduralReason } from "./fr-classify.js";
 import { curatedFrDocNumbers } from "./policy.js";
 
 const TIMEOUT_MS = 15_000;
@@ -34,13 +34,13 @@ export const ELECTIONS: { date: string; title: string }[] = [
 
 const ELECTION_SOURCE_URL = "https://www.usa.gov/midterm-state-and-local-elections";
 
-function horizonEnd(today: string, horizonDays: number): string {
+export function horizonEnd(today: string, horizonDays: number): string {
   return new Date(Date.parse(`${today}T00:00:00Z`) + horizonDays * 86_400_000).toISOString().slice(0, 10); // clock-guard: pure-date
 }
 
 export type FrDrop = { dedupeKey: string; title: string; reason: string };
 export type FrQueryReport = { name: string; pages: number; totalPages: number | null; docs: number; ok: boolean; error?: string };
-export type FrSyncReport = { at: string; complete: boolean; count: number; drops: FrDrop[]; skippedCurated: string[]; noOperativeMarker: string[]; queries: FrQueryReport[]; curatedError?: string };
+export type FrSyncReport = { at: string; complete: boolean; count: number; drops: FrDrop[]; skippedCurated: string[]; noOperativeMarker: string[]; permitsMemos: string[]; queries: FrQueryReport[]; curatedError?: string };
 let lastFrSyncReport: FrSyncReport | null = null;
 export function getLastFrSyncReport(): FrSyncReport | null {
   return lastFrSyncReport;
@@ -53,7 +53,7 @@ export function resetFrSyncReportForTests(): void {
 const FR_KINDS = ["rule_effective", "rule_expiry", "comment_close", "presidential_action", "regulatory_decision"] as const;
 
 export async function syncFederalRegister(
-  store: Pick<Store, "upsertCatalyst" | "purgeStaleCatalysts" | "listStaleCatalysts">,
+  store: Pick<Store, "upsertCatalyst" | "purgeStaleCatalysts" | "listStaleCatalysts"> & Partial<Pick<Store, "getFrText" | "putFrText">>,
   opts: {
     today: string;
     horizonDays: number;
@@ -74,11 +74,13 @@ export async function syncFederalRegister(
   } catch (err) {
     const message = errorMessage(err);
     log(`federal register abort: curated doc numbers unavailable: ${message}`);
-    lastFrSyncReport = { at: new Date().toISOString(), complete: false, count: 0, drops: [], skippedCurated: [], noOperativeMarker: [], queries: [], curatedError: message };
+    lastFrSyncReport = { at: new Date().toISOString(), complete: false, count: 0, drops: [], skippedCurated: [], noOperativeMarker: [], permitsMemos: [], queries: [], curatedError: message };
     return;
   }
   const runStart = new Date().toISOString();
   const dropReasons = new Map<string, string>();
+  let cacheHits = 0;
+  let cacheFetches = 0;
   const end = horizonEnd(opts.today, opts.horizonDays);
   const gte = new Date(Date.parse(`${opts.today}T00:00:00Z`) - 400 * 86_400_000).toISOString().slice(0, 10); // clock-guard: pure-date
   const fields = [
@@ -93,6 +95,8 @@ export async function syncFederalRegister(
     "subtype",
     "raw_text_url",
     "dates",
+    "docket_ids",
+    "action",
   ]
     .map((f) => `fields[]=${f}`)
     .join("&");
@@ -153,6 +157,7 @@ export async function syncFederalRegister(
   const queries: FrQueryReport[] = [];
   const skippedCurated = new Set<string>();
   const noOperativeMarker = new Set<string>();
+  const permitsMemos = new Set<string>();
   for (const target of targets) {
     const q: FrQueryReport = { name: target.name, pages: 0, totalPages: null, docs: 0, ok: true };
     try {
@@ -194,12 +199,19 @@ export async function syncFederalRegister(
             dates: typeof row.dates === "string" ? row.dates : null,
             effective_on: typeof row.effective_on === "string" ? row.effective_on : null,
             comments_close_on: typeof row.comments_close_on === "string" ? row.comments_close_on : null,
+            docket_ids: Array.isArray(row.docket_ids) ? row.docket_ids.filter((d): d is string => typeof d === "string") : null,
+            action: typeof row.action === "string" ? row.action : null,
           };
           if (isNoise(doc)) {
             dropReasons.set(documentNumber, `noise:${NOISE_PATTERNS.find((p) => p.test(title))?.source ?? "correction"}`);
             continue;
           }
           if (!isRelevant(doc)) {
+          const proc = proceduralReason(doc);
+          if (proc) {
+            dropReasons.set(documentNumber, proc);
+            continue;
+          }
             dropReasons.set(documentNumber, "no topic match");
             continue;
           }
@@ -207,10 +219,24 @@ export async function syncFederalRegister(
           if (target.presidential) {
             const rawUrl = typeof row.raw_text_url === "string" ? row.raw_text_url : null;
             if (!rawUrl) throw new Error("missing raw_text_url");
-            doc.bodyText = await (await fetchResponse(rawUrl)).text();
+            // FR documents are immutable once published, so cache entries never expire.
+            const cached = await store.getFrText?.(documentNumber);
+            if (cached) {
+              doc.bodyText = cached;
+              cacheHits++;
+            } else {
+              doc.bodyText = await (await fetchResponse(rawUrl)).text();
+              cacheFetches++;
+              await store.putFrText?.(documentNumber, doc.bodyText);
+            }
             if (!hasOperativeMarker(doc)) {
-              log(`federal register WARNING ${documentNumber}: no presidential operative marker; dates kept estimated`);
-              noOperativeMarker.add(documentNumber);
+              // Only Proclamations and Executive Orders reliably carry operative markers; memos/determinations/notices don't.
+              if (doc.subtype === "Proclamation" || doc.subtype === "Executive Order") {
+                log(`federal register WARNING ${documentNumber}: no presidential operative marker; dates kept estimated`);
+                noOperativeMarker.add(documentNumber);
+              } else {
+                permitsMemos.add(documentNumber);
+              }
             }
           }
           const events = classify(doc, { today: opts.today, end });
@@ -262,6 +288,7 @@ export async function syncFederalRegister(
     queries.push(q);
   }
 
+  log(`federal register text cache: ${cacheHits} hits, ${cacheFetches} fetches`);
   // Only delete rows the current code would have refreshed; a partial run must not wipe fresh-looking old rows.
   if (queries.every((q) => q.ok)) {
     const drops: FrDrop[] = [];
@@ -274,10 +301,10 @@ export async function syncFederalRegister(
         drops.push({ dedupeKey: row.dedupeKey, title: row.title, reason });
       }
     }
-    lastFrSyncReport = { at: new Date().toISOString(), complete: true, count: drops.length, drops, skippedCurated: [...skippedCurated].sort(), noOperativeMarker: [...noOperativeMarker].sort(), queries };
+    lastFrSyncReport = { at: new Date().toISOString(), complete: true, count: drops.length, drops, skippedCurated: [...skippedCurated].sort(), noOperativeMarker: [...noOperativeMarker].sort(), permitsMemos: [...permitsMemos].sort(), queries };
     for (const kind of FR_KINDS) await store.purgeStaleCatalysts(kind, opts.today, runStart, "fr:");
   } else {
-    lastFrSyncReport = { at: new Date().toISOString(), complete: false, count: 0, drops: [], skippedCurated: [...skippedCurated].sort(), noOperativeMarker: [...noOperativeMarker].sort(), queries };
+    lastFrSyncReport = { at: new Date().toISOString(), complete: false, count: 0, drops: [], skippedCurated: [...skippedCurated].sort(), noOperativeMarker: [...noOperativeMarker].sort(), permitsMemos: [...permitsMemos].sort(), queries };
   }
 }
 

@@ -17,6 +17,8 @@ export interface FrApiDoc {
   html_url?: string | null;
   agencyLabel: string;
   bodyText?: string | null;
+  docket_ids?: string[] | null;
+  action?: string | null;
 }
 
 export type DateRole =
@@ -120,6 +122,8 @@ const ROLE_EFFECTIVE_RE = new RegExp(String.raw`\b(?:12:01\s*a\.m\. [a-z ]{0,60}
 /** Text markers that open the operative part of a presidential document (order, proclamation, section heading). */
 export const PRESIDENTIAL_OPERATIVE_MARKERS: RegExp[] = [
   /proclaim\s+as\s+follows/i,
+  /\bdo\s+(?:hereby\s+)?proclaim\b/i,
+  /\bNOW,?\s+THEREFORE,?\s+I,[\s\S]{0,400}?\b(?:do\s+(?:hereby\s+)?)?proclaim\b/i,
   /(?:it\s+is\s+)?hereby\s+(?:determine\s+and\s+)?order(?:ed)?\b/i,
   /\bI\s+hereby\s+direct\b/i,
   /\bI\s+hereby\s+determine\b/i,
@@ -332,4 +336,23 @@ export function classify(doc: FrApiDoc, window: { today: string; end: string }):
     out.push(r);
   }
   return out;
+}
+
+/**
+ * Determine if a document is procedural based on its type and docket IDs.
+ * This rule is by document type/issuing level, not title.
+ * FCC bureau-level public notices (delegated authority, docket_ids contain a "DA 26-1087" style number)
+ * such as "Wireless Telecommunications Bureau Establishes a New Docket..." are procedural (filing windows, comment cycles on filings)
+ * and must not become comment_close events. Substantive FCC rulemakings are type "Proposed Rule" with a Commission number ("FCC 26-51")
+ * and must still be kept.
+ */
+export function proceduralReason(doc: FrApiDoc): string | null {
+  if (doc.type === "Notice" && Array.isArray(doc.docket_ids)) {
+    const hasDA = doc.docket_ids.some(id => /\bDA\s+\d{2}-\d+/i.test(id));
+    const hasFCC = doc.docket_ids.some(id => /\bFCC\s+\d{2}-\d+/i.test(id));
+    if (hasDA && !hasFCC) {
+      return "procedural:bureau-notice";
+    }
+  }
+  return null;
 }

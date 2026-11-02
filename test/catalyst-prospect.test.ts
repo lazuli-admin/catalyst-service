@@ -53,7 +53,7 @@ describe("runProspect", () => {
 
   it("stores tier 1 sources as calendar entries, visible by default", async () => {
     const store = await memoryStore();
-    const rss = `<?xml version="1.0"?><rss><channel><item><title>Nvidia earnings call scheduled</title><link>https://www.businesswire.com/news/nvda</link><guid>b1</guid><pubDate>Mon, 01 Jan 2024 00:00:00 GMT</pubDate></item></channel></rss>`;
+    const rss = `<?xml version="1.0"?><rss><channel><item><title>Nvidia earnings call scheduled</title><link>https://www.sec.gov/Archives/edgar/data/1018724/000162828024002399/tsla-20231231.htm</link><guid>b1</guid><pubDate>Mon, 01 Jan 2024 00:00:00 GMT</pubDate></item></channel></rss>`;
     const result = await runProspect(
       { store, extractor: { extract: async () => extracted }, fetch: fakeFetch({ "https://news.google.com": rss }), clock: fixedClock("2024-01-01T00:00:00Z") },
       { watchlist: ["NVDA"], themes: [], maxItems: 10, perQuery: 5 },

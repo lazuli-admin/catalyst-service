@@ -58,8 +58,7 @@ const KNOWN_MISSES: Record<string, string> = {
     "clearing agency registration kept by design (matches clearing/registration topic) (known FP)",
   "2026-03237":
     "SRO crypto-options position-limit filing kept via crypto topic (known FP)",
-  "2026-02458":
-    "FTC consent order analysis to aid public comment; parties not in preset company universe (known FN)",
+
   "2026-12612":
     "FTC consent order analysis to aid public comment; parties not in preset company universe (known FN)",
 };
@@ -90,6 +89,18 @@ describe("fr-blind regression gates", () => {
       `not-fetched: tp=${notFetched.tp} fn=${notFetched.fn} fp=${notFetched.fp} tn=${notFetched.tn} recall=${notFetched.recall.toFixed(3)} precision=${notFetched.precision.toFixed(3)}`,
     );
     console.log(`borderline: ${borderline.length} rows (excluded from gate)`);
+  });
+
+  // Known borderline false positives in set 3: 2026-20714 (Cboe Clear clearing-agency
+  // registration) and 2026-03237 (MEMX crypto option position limits); the SEC procedural
+  // rule stays narrow and is intentionally not changed for them.
+  test("fr-blind-3 post-#29 gate: recall and default-view precision reported separately", () => {
+    const { fetched } = computeFrRecall(blind3);
+    expect(fetched.recall).toBeGreaterThanOrEqual(0.92);
+    expect(fetched.dvPrecision).toBeGreaterThanOrEqual(1);
+    console.log(
+      `default-view: tp=${fetched.dvTp} fp=${fetched.dvFp} precision=${fetched.dvPrecision.toFixed(3)}`,
+    );
   });
 });
 

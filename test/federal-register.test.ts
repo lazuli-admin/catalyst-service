@@ -594,6 +594,34 @@ describe("federal register paging and PRESDOCU", () => {
     expect(catalysts(s).map((r) => r.dateStart)).toEqual(["2026-12-04"]);
   });
 
+  it("PRESDOCU: Memorandum without an operative marker -> permitsMemos, not noOperativeMarker", async () => {
+    const logs: string[] = [];
+    const fetchImpl = mockFetch({
+      PRESDOCU: {
+        results: [
+          {
+            title: "Delegating Authority Under the Modular Framework for Reciprocal Trade",
+            type: "Presidential Document",
+            subtype: "Memorandum",
+            effective_on: null,
+            html_url: "https://www.federalregister.gov/d/2026-26302",
+            abstract: "",
+            document_number: "2026-26302",
+            raw_text_url: "https://www.federalregister.gov/documents/full_text/raw/2026-26302.txt",
+          },
+        ],
+        total_pages: 1,
+      },
+      rawText: "Adjusted imports of steel shall apply on or after 12:01 a.m. eastern time on December 4, 2026.",
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, horizonDays: 60, fetch: fetchImpl as unknown as typeof fetch, log: (m) => logs.push(m) });
+    const report = getLastFrSyncReport();
+    expect(report!.permitsMemos).toEqual(["2026-26302"]);
+    expect(report!.noOperativeMarker).toEqual([]);
+    expect(logs.some((m) => m.includes("no presidential operative marker"))).toBe(false);
+  });
+
   it("PRESDOCU: raw-text fetch failing (500) -> no purge, report complete false", async () => {
     const fetchImpl = mockFetch(
       {

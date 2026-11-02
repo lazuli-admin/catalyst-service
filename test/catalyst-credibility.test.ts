@@ -5,9 +5,9 @@ describe("sourceTier", () => {
   it("returns tier 1 for primary sources", () => {
     expect(sourceTier({ url: "https://www.sec.gov/Archives/edgar/data/1018724/000162828024002399/tsla-20231231.htm" })).toBe(1);
     expect(sourceTier({ url: "https://www.federalregister.gov/documents/2024/01/01/2024-00001/some-rule" })).toBe(1);
-    expect(sourceTier({ url: "https://www.businesswire.com/news/home/20240101000000/en/Some-News" })).toBe(1);
     expect(sourceTier({ url: "https://ir.tesla.com/press-release/some-news" })).toBe(1);
     expect(sourceTier({ url: "https://investor.apple.com/news" })).toBe(1);
+    expect(sourceTier({ url: "https://www.businesswire.com/news/home/20240101000000/en/Some-News" })).toBe(2);
   });
 
   it("returns tier 2 for reputable press", () => {
@@ -27,7 +27,7 @@ describe("sourceTier", () => {
   });
 
   it("returns tier 1 or 2 for google news based on publisher suffix", () => {
-    expect(sourceTier({ url: "https://news.google.com/rss/articles/CBMiKGh0dHBzOi8vd3d3LmJ1c2luZXNzd2lyZS5jb20v?oc=5", title: "Some News - Business Wire" })).toBe(1);
+    expect(sourceTier({ url: "https://news.google.com/rss/articles/CBMiKGh0dHBzOi8vd3d3LmJ1c2luZXNzd2lyZS5jb20v?oc=5", title: "Some News - Business Wire" })).toBe(2);
     expect(sourceTier({ url: "https://news.google.com/rss/articles/CBMiKGh0dHBzOi8vd3d3LnJldXRlcnMuY29tLw?oc=5", title: "Some News - Reuters" })).toBe(2);
     expect(sourceTier({ url: "https://news.google.com/rss/articles/CBMiKGh0dHBzOi8vd3d3LmJsb29tYmVyZy5jb20v?oc=5", title: "Some News - Bloomberg" })).toBe(2);
     expect(sourceTier({ url: "https://news.google.com/rss/articles/CBMiKGh0dHBzOi8vd3d3LnRoZXdhbGxzdHJlZXRqb3VybmFsLmNvbS8?oc=5", title: "Some News - The Wall Street Journal" })).toBe(2);

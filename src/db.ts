@@ -24,6 +24,7 @@ import type {
   TradeEntity,
 } from "./types.js";
 import { newId, nowIso } from "./util.js";
+import { enforceTrust } from "./catalysts/credibility.js";
 
 const MIGRATIONS = [
   `CREATE TABLE IF NOT EXISTS themes (
@@ -175,6 +176,7 @@ const MIGRATIONS = [
   )`,
   `CREATE INDEX IF NOT EXISTS catalysts_ticker ON catalysts(ticker)`,
   `CREATE INDEX IF NOT EXISTS catalysts_date_start ON catalysts(date_start)`,
+  `CREATE TABLE IF NOT EXISTS fr_text_cache (document_number TEXT PRIMARY KEY, body TEXT NOT NULL, fetched_at TEXT NOT NULL)`,
 ];
 
 const json = (v: unknown): string => JSON.stringify(v);
@@ -945,6 +947,18 @@ export class Store {
     );
   }
 
+  async getFrText(documentNumber: string): Promise<string | null> {
+    const rows = await this.all("SELECT body FROM fr_text_cache WHERE document_number = ?", [documentNumber]);
+    return rows.length > 0 ? String(rows[0]!.body) : null;
+  }
+
+  async putFrText(documentNumber: string, body: string): Promise<void> {
+    await this.run(
+      "INSERT INTO fr_text_cache (document_number, body, fetched_at) VALUES (?, ?, ?) ON CONFLICT(document_number) DO UPDATE SET body = excluded.body, fetched_at = excluded.fetched_at",
+      [documentNumber, body, nowIso()],
+    );
+  }
+
   /** Delete rows whose dedupe_key starts with prefix, except the given exact dedupe keys. */
   async purgeByKeyPrefixExcept(prefix: string, keepKeys: string[]): Promise<void> {
     if (keepKeys.length === 0) {
@@ -959,8 +973,10 @@ export class Store {
 
   /** Insert or update by dedupeKey; id and createdAt are kept on conflict. */
   async upsertCatalyst(c: CatalystInput): Promise<Catalyst> {
+    const t = enforceTrust(c);
+    if (!t) throw new Error(`rejected catalyst ${c.dedupeKey}: legacy title key for regulatory_decision`);
     const updatedAt = nowIso();
-    const datePrecision = c.datePrecision ?? (c.dateStart === c.dateEnd ? "exact" : "window");
+    const datePrecision = t.datePrecision ?? (t.dateStart === t.dateEnd ? "exact" : "window");
     const rows = await this.all(
       `INSERT INTO catalysts
        (id, ticker, title, kind, status, date_start, date_end, date_precision, date_source, confidence, themes, affected_tickers, source_tier, source_url, observation_id, dedupe_key, created_at, updated_at)
@@ -980,7 +996,7 @@ export class Store {
          source_url = CASE WHEN excluded.source_tier <= catalysts.source_tier THEN excluded.source_url ELSE catalysts.source_url END,
          updated_at = excluded.updated_at
        RETURNING *`,
-      [newId(), c.ticker, c.title, c.kind, c.status, c.dateStart, c.dateEnd, datePrecision, c.dateSource ?? null, c.confidence, json(c.themes), json(c.affectedTickers), c.sourceTier, c.sourceUrl, c.observationId, c.dedupeKey, updatedAt, updatedAt],
+      [newId(), t.ticker, t.title, t.kind, t.status, t.dateStart, t.dateEnd, datePrecision, t.dateSource ?? null, t.confidence, json(t.themes), json(t.affectedTickers), t.sourceTier, t.sourceUrl, t.observationId, t.dedupeKey, updatedAt, updatedAt],
     );
     if (!rows[0]) throw new Error("upsertCatalyst returned no row");
     return toCatalyst(rows[0]);
