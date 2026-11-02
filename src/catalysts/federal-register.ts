@@ -208,12 +208,14 @@ export async function syncFederalRegister(
             dropReasons.set(documentNumber, `noise:${NOISE_PATTERNS.find((p) => p.test(title))?.source ?? "correction"}`);
             continue;
           }
-          if (!isRelevant(doc)) {
+          // Procedural bureau notices are dropped regardless of topic match: a relevant-looking
+          // FCC DA notice would otherwise survive the relevance gate and become a comment row.
           const proc = proceduralReason(doc);
           if (proc) {
             dropReasons.set(documentNumber, proc);
             continue;
           }
+          if (!isRelevant(doc)) {
             dropReasons.set(documentNumber, "no topic match");
             continue;
           }

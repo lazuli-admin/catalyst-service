@@ -92,7 +92,8 @@ async function syncEarningsDay(
         confidence: 0.95,
         themes: marketCap >= MEGACAP_MIN ? ["megacap"] : [],
         affectedTickers: [],
-        sourceUrl: IR_SOURCES[symbol] ?? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${symbol}&type=8-K`,
+        // Nasdaq's earnings calendar is the source: never fabricate an IR/EDGAR URL (that would fake tier 1).
+        sourceUrl: `https://www.nasdaq.com/market-activity/earnings?date=${date}`,
       });
       ctx.counts.earnings++;
     }

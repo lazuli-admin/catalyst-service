@@ -38,31 +38,36 @@ describe("catalysts db", () => {
     expect(list[0]!.id).toBe(a.id);
   });
 
-  it("upsert always takes the new title, tier and source_url", async () => {
+  it("upsert merges: a worse-tier write keeps the trusted row's identity, updates dates/confidence", async () => {
     const store = await memoryStore();
-    const a = await store.upsertCatalyst({ ...base, title: "FOMC meeting", sourceUrl: "https://www.sec.gov/Archives/edgar/data/1018724/000162828024002399/tsla-20231231.htm" });
-    const b = await store.upsertCatalyst({ ...base, title: "FOMC renamed", sourceUrl: "https://www.sec.gov/Archives/edgar/data/1018724/000162828024002399/tsla-20231231.htm" });
+    const secUrl = "https://www.sec.gov/Archives/edgar/data/1018724/000162828024002399/tsla-20231231.htm";
+    const a = await store.upsertCatalyst({ ...base, title: "FOMC meeting", sourceUrl: secUrl });
+    const b = await store.upsertCatalyst({ ...base, title: "FOMC renamed", sourceUrl: secUrl });
     expect(b.id).toBe(a.id);
     expect(b.title).toBe("FOMC renamed");
 
-    // A worse-tier source now overwrites the row instead of being ignored.
-    const c = await store.upsertCatalyst({ ...base, title: "FOMC worse tier", sourceUrl: "https://www.reuters.com/some-article" });
+    // A worse-tier source never overwrites the row's trust-bearing fields; only dates/confidence update.
+    const c = await store.upsertCatalyst({ ...base, title: "FOMC worse tier", confidence: 0.5, sourceUrl: "https://www.reuters.com/some-article" });
     expect(c.id).toBe(a.id);
-    expect(c.title).toBe("FOMC worse tier");
-    expect(c.sourceTier).toBe(2);
-    expect(c.sourceUrl).toBe("https://www.reuters.com/some-article");
+    expect(c.title).toBe("FOMC renamed");
+    expect(c.sourceTier).toBe(1);
+    expect(c.sourceUrl).toBe(secUrl);
+    expect(c.confidence).toBe(0.5);
   });
 
-  it("upsert always takes the new kind", async () => {
+  it("upsert takes the new kind when tiers are equal, keeps it when the existing row is more trusted", async () => {
     const store = await memoryStore();
-    const a = await store.upsertCatalyst({ ...base, kind: "regulatory_decision", sourceUrl: "https://www.sec.gov/Archives/edgar/data/1018724/000162828024002399/tsla-20231231.htm" });
-    const b = await store.upsertCatalyst({ ...base, kind: "comment_close", sourceUrl: "https://www.sec.gov/Archives/edgar/data/1018724/000162828024002399/tsla-20231231.htm" });
+    const secUrl = "https://www.sec.gov/Archives/edgar/data/1018724/000162828024002399/tsla-20231231.htm";
+    const a = await store.upsertCatalyst({ ...base, kind: "regulatory_decision", sourceUrl: secUrl });
+    const b = await store.upsertCatalyst({ ...base, kind: "comment_close", sourceUrl: secUrl });
     expect(b.id).toBe(a.id);
     expect(b.kind).toBe("comment_close");
 
+    // Tier 1 row: a tier-2 write cannot change its kind.
     const c = await store.upsertCatalyst({ ...base, kind: "earnings", sourceUrl: "https://www.reuters.com/some-article" });
     expect(c.id).toBe(a.id);
-    expect(c.kind).toBe("earnings");
+    expect(c.kind).toBe("comment_close");
+    expect(c.sourceTier).toBe(1);
   });
 
   it("filters by window, ticker and theme", async () => {

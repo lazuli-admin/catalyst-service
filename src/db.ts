@@ -184,6 +184,14 @@ const json = (v: unknown): string => JSON.stringify(v);
 const parse = <T>(v: unknown, fallback: T): T => (typeof v === "string" ? (JSON.parse(v) as T) : fallback);
 const s = (v: unknown): string => String(v);
 const sOrNull = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
+const isNasdaqUrl = (u: string | null): boolean => {
+  try {
+    const host = new URL(u ?? "").hostname;
+    return host === "nasdaq.com" || host.endsWith(".nasdaq.com");
+  } catch {
+    return false;
+  }
+};
 
 // Pre-policy status names, mapped to the current vocabulary.
 const LEGACY_STATUS: Record<string, CatalystStatus> = { expected: "scheduled", occurred: "done", rumored: "lead" };
@@ -977,20 +985,35 @@ export class Store {
     );
   }
 
-  /** Insert or update by dedupeKey; id and createdAt are kept on conflict. */
+  /** Insert or update by dedupeKey; id and createdAt are kept on conflict.
+   *  Trust merge: a lower-trust write never overwrites identity fields of a more-trusted row.
+   *  The existing row's tier is recomputed from ITS OWN URL (stored source_tier is not trusted;
+   *  the caller's sourceTier is ignored — enforceTrust already recomputed it from the incoming URL). */
   async upsertCatalyst(c: CatalystInput): Promise<Catalyst> {
     const t = enforceTrust(c);
     if (!t) throw new Error(`rejected catalyst ${c.dedupeKey}: legacy title key for regulatory_decision`);
     const updatedAt = nowIso();
     const datePrecision = t.datePrecision ?? (t.dateStart === t.dateEnd ? "exact" : "window");
+    let title: string = t.title, kind: string = t.kind, status: string = t.status, sourceUrl = t.sourceUrl, tier = t.sourceTier;
+    const [existing] = await this.all("SELECT title, kind, status, source_url FROM catalysts WHERE dedupe_key = ?", [t.dedupeKey]);
+    if (existing) {
+      const existingTier = sourceTier({ url: sOrNull(existing.source_url), title: s(existing.title) });
+      if (existingTier < tier) {
+        title = s(existing.title);
+        kind = s(existing.kind);
+        status = s(existing.status);
+        sourceUrl = sOrNull(existing.source_url);
+        tier = existingTier;
+      }
+    }
     const rows = await this.all(
       `INSERT INTO catalysts
        (id, ticker, title, kind, status, date_start, date_end, date_precision, date_source, confidence, themes, affected_tickers, source_tier, source_url, observation_id, dedupe_key, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(dedupe_key) DO UPDATE SET
-         title = excluded.title,
-         kind = excluded.kind,
-         status = excluded.status,
+         title = ?,
+         kind = ?,
+         status = ?,
          date_start = excluded.date_start,
          date_end = excluded.date_end,
          date_precision = excluded.date_precision,
@@ -998,11 +1021,12 @@ export class Store {
          confidence = excluded.confidence,
          themes = excluded.themes,
          affected_tickers = excluded.affected_tickers,
-         source_tier = excluded.source_tier,
-         source_url = excluded.source_url,
+         source_tier = ?,
+         source_url = ?,
          updated_at = excluded.updated_at
        RETURNING *`,
-      [newId(), t.ticker, t.title, t.kind, t.status, t.dateStart, t.dateEnd, datePrecision, t.dateSource ?? null, t.confidence, json(t.themes), json(t.affectedTickers), t.sourceTier, t.sourceUrl, t.observationId, t.dedupeKey, updatedAt, updatedAt],
+      [newId(), t.ticker, t.title, t.kind, t.status, t.dateStart, t.dateEnd, datePrecision, t.dateSource ?? null, t.confidence, json(t.themes), json(t.affectedTickers), t.sourceTier, t.sourceUrl, t.observationId, t.dedupeKey, updatedAt, updatedAt,
+       title, kind, status, tier, sourceUrl],
     );
     if (!rows[0]) throw new Error("upsertCatalyst returned no row");
     return toCatalyst(rows[0]);
@@ -1012,18 +1036,21 @@ export class Store {
   async recomputeTrust(): Promise<
     { id: string; dedupeKey: string; from: { tier: number; kind: string; status: string }; to: { tier: number; kind: string; status: string } }[]
   > {
-    const rows = await this.all("SELECT id, title, kind, status, source_tier, source_url, dedupe_key FROM catalysts");
+    const rows = await this.all("SELECT id, title, kind, status, source_tier, source_url, date_start, dedupe_key FROM catalysts");
     const changes: { id: string; dedupeKey: string; from: { tier: number; kind: string; status: string }; to: { tier: number; kind: string; status: string } }[] = [];
     for (const r of rows) {
       const from = { tier: Number(r.source_tier), kind: s(r.kind), status: s(r.status) };
-      const tier = sourceTier({ url: sOrNull(r.source_url), title: s(r.title) });
+      let url = sOrNull(r.source_url);
+      // Earnings rows come from the Nasdaq calendar; a non-nasdaq source_url (stale fabricated EDGAR/IR links) is backfilled and re-tiered.
+      if (s(r.kind) === "earnings" && !isNasdaqUrl(url)) url = `https://www.nasdaq.com/market-activity/earnings?date=${s(r.date_start)}`;
+      const tier = sourceTier({ url, title: s(r.title) });
       let { kind, status } = from;
       if (kind === "regulatory_decision" && tier !== 1) {
         kind = "other";
         if (status === "confirmed" || status === "scheduled") status = "lead";
       }
-      if (tier === from.tier && kind === from.kind && status === from.status) continue;
-      await this.run("UPDATE catalysts SET source_tier = ?, kind = ?, status = ? WHERE id = ?", [tier, kind, status, s(r.id)]);
+      if (tier === from.tier && kind === from.kind && status === from.status && url === sOrNull(r.source_url)) continue;
+      await this.run("UPDATE catalysts SET source_tier = ?, kind = ?, status = ?, source_url = ? WHERE id = ?", [tier, kind, status, url, s(r.id)]);
       changes.push({ id: s(r.id), dedupeKey: s(r.dedupe_key), from, to: { tier, kind, status } });
     }
     return changes;

@@ -918,4 +918,50 @@ describe("FR result cap, empty-page guard, and bounded retry", () => {
     expect(bisCalls(fetchImpl)).toBe(1);
     expect(delays.every((d) => d === 250)).toBe(true);
   });
+
+  it("fixture: FCC bureau notice 2026-21731 (DA docket, type Notice) is procedural even when topic-relevant -> no catalyst", async () => {
+    const FCC = "federal-communications-commission";
+    const fetchImpl = mockFetch({
+      [FCC]: {
+        results: [
+          {
+            title: "Wireless Telecommunications Bureau Establishes a New Docket for Spectrum Sharing",
+            type: "Notice",
+            abstract: "",
+            document_number: "2026-21731",
+            html_url: "https://www.federalregister.gov/d/2026-21731",
+            comments_close_on: "2026-11-10",
+            docket_ids: ["GN Docket Nos. 25-59 and 26-289", "DA 26-1087", "FR ID 373607"],
+          },
+        ],
+      },
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
+    expect(catalysts(s)).toEqual([]);
+  });
+
+  it("near-miss: FCC Proposed Rule with a Commission number keeps its comment-close row", async () => {
+    const FCC = "federal-communications-commission";
+    const fetchImpl = mockFetch({
+      [FCC]: {
+        results: [
+          {
+            title: "Unleashing Unlicensed Spectrum for Direct-to-Device",
+            type: "Proposed Rule",
+            abstract: "",
+            document_number: "2026-21999",
+            html_url: "https://www.federalregister.gov/d/2026-21999",
+            comments_close_on: "2026-11-10",
+            docket_ids: ["WT Docket No. 26-1", "FCC 26-51"],
+          },
+        ],
+      },
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
+    const rows = catalysts(s);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ kind: "comment_close", dedupeKey: "fr:2026-21999:comments:2026-11-10", sourceTier: 1 });
+  });
 });

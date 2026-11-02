@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { IR_SOURCES, syncCalendars } from "../src/catalysts/calendars.js";
+import { memoryStore } from "./helpers.js";
 import type { Catalyst } from "../src/types.js";
 
 const EARNINGS_URL = "https://api.nasdaq.com/api/calendar/earnings?date=";
@@ -75,16 +76,30 @@ describe("syncCalendars", () => {
     expect(themes).toEqual([["megacap"], []]);
   });
 
-  it("sources earnings: LITE gets its IR url, others their EDGAR 8-K list", async () => {
+  it("sources every earnings row from the nasdaq.com calendar (tier 2, no fabricated IR/EDGAR urls)", async () => {
     const earnings = { data: { rows: [
       { symbol: "LITE", name: "Lumentum Holdings", marketCap: "$100,000,000,000", time: "time-pre-market" },
       { symbol: "NVDA", name: "NVIDIA Corp", marketCap: "$3,000,000,000,000", time: "time-pre-market" },
     ] } };
     const s = store();
     await syncCalendars(s as never, { ...opts, fetch: mockFetch(earnings) as unknown as typeof fetch });
-    const urls = s.upsertCatalyst.mock.calls.map(([c]) => (c as { sourceUrl: string | null }).sourceUrl);
-    expect(urls[0]).toBe(IR_SOURCES.LITE);
-    expect(urls[1]).toBe("https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=NVDA&type=8-K");
+    const calls = s.upsertCatalyst.mock.calls.map(([c]) => c as Catalyst & { dedupeKey: string });
+    // IR_SOURCES export stays for reference but is no longer used for stored sourceUrl.
+    expect(IR_SOURCES.LITE).toBeTruthy();
+    for (const c of calls) {
+      expect(c.kind).toBe("earnings");
+      expect(c.sourceUrl).toBe("https://www.nasdaq.com/market-activity/earnings?date=2026-02-12");
+    }
+
+    // End-to-end: the real store re-tiers the nasdaq.com URL to 2 (mock fetch answers every other backend).
+    const real = await memoryStore();
+    await syncCalendars(real, { ...opts, fetch: mockFetch(earnings) as unknown as typeof fetch });
+    const rows = await real.client.execute("SELECT source_url, source_tier FROM catalysts WHERE kind = 'earnings'");
+    expect(rows.rows).toHaveLength(2);
+    for (const r of rows.rows) {
+      expect(String(r.source_url)).toBe("https://www.nasdaq.com/market-activity/earnings?date=2026-02-12");
+      expect(Number(r.source_tier)).toBe(2);
+    }
   });
 
   it("tolerates null rows", async () => {

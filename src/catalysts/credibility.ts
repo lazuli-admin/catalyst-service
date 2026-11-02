@@ -10,7 +10,7 @@ export function isWireSource(url: string | null | undefined): boolean {
   const host = hostOf(url);
   return host !== "" && matches(host, WIRE_DOMAINS);
 }
-const TIER2_DOMAINS = ["reuters.com", "bloomberg.com", "wsj.com", "ft.com", "cnbc.com", "apnews.com", "nytimes.com", "barrons.com", "theinformation.com", "nikkei.com", "marketwatch.com", "axios.com", "semafor.com"];
+const TIER2_DOMAINS = ["reuters.com", "bloomberg.com", "wsj.com", "ft.com", "cnbc.com", "apnews.com", "nytimes.com", "barrons.com", "theinformation.com", "nikkei.com", "marketwatch.com", "axios.com", "semafor.com", "nasdaq.com"];
 
 const hostOf = (url: string): string => {
   try {
