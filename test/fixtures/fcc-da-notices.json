@@ -1,0 +1,203 @@
+[
+ {
+  "document_number": "2026-21732",
+  "title": "Wireless Telecommunications Bureau Announces Upper C-Band Clearinghouse Selection Criteria and Submission Process",
+  "action": "Notice.",
+  "docket_ids": [
+   "GN Docket No. 25-59",
+   "DA 26-1099",
+   "FR ID 373608"
+  ],
+  "type": "Notice",
+  "agencies": [
+   {
+    "raw_name": "FEDERAL COMMUNICATIONS COMMISSION",
+    "name": "Federal Communications Commission",
+    "id": 161,
+    "url": "https://www.federalregister.gov/agencies/federal-communications-commission",
+    "json_url": "https://www.federalregister.gov/api/v1/agencies/161",
+    "parent_id": null,
+    "slug": "federal-communications-commission"
+   }
+  ],
+  "comments_close_on": null,
+  "publication_date": "2026-10-26",
+  "abstract": "In this document, the Wireless Telecommunications Bureau (Bureau) announces that it has received detailed selection criteria and related submission instructions for proposals for the position of Upper C-band Clearinghouse. In Upper C-band (3.98-4.2 GHz); Expanding Flexible Use of the 3.7 to 4.2 GHz Band, GN Docket Nos. 25-59 and 18- 122, Report and Order, Order of Proposed Modification, and Order on Reconsideration, FCC 26-46 (July 24, 2026) (Upper C-band R&O), the Commission provided for the creation of an independent, third-party Upper C-band Clearinghouse to oversee the cost-related aspects of the Upper C-band transition, including the receipt, review, and disposition of all actual cost and lump sum reimbursement claims. The Upper C-band Clearinghouse will also administer the rebates for adjacent band radio altimeter retrofits."
+ },
+ {
+  "document_number": "2026-21731",
+  "title": "Wireless Telecommunications Bureau Establishes a New Docket and the Process for Comment on Eligible Space Station Operator Transition Plans",
+  "action": "Notice; solicitation of comments.",
+  "docket_ids": [
+   "GN Docket Nos. 25-59 and 26-289",
+   "DA 26-1087",
+   "FR ID 373607"
+  ],
+  "type": "Notice",
+  "agencies": [
+   {
+    "raw_name": "FEDERAL COMMUNICATIONS COMMISSION",
+    "name": "Federal Communications Commission",
+    "id": 161,
+    "url": "https://www.federalregister.gov/agencies/federal-communications-commission",
+    "json_url": "https://www.federalregister.gov/api/v1/agencies/161",
+    "parent_id": null,
+    "slug": "federal-communications-commission"
+   }
+  ],
+  "comments_close_on": "2026-11-30",
+  "publication_date": "2026-10-26",
+  "abstract": "In this document, the Wireless Telecommunications Bureau (Bureau) establishes GN Docket No. 26-289, which is captioned \"Eligible Space Station Operator Transition Plans for the Upper C- Band.\" This document also details the process for notice and comment on the eligible space station operators' initial Transition Plans. Stakeholder comments are due on November 30, 2026. All initial Transition Plans and responsive comments should be filed only in GN Docket No. 26-289."
+ },
+ {
+  "document_number": "2026-21321",
+  "title": "Wireless Telecommunications Bureau Seeks Comment on Preliminary Cost Catalog for Upper C-Band Incumbent Transition",
+  "action": "Notice; solicitation of comment.",
+  "docket_ids": [
+   "GN Docket No. 25-59",
+   "DA 26-1049",
+   "FR ID: 372721"
+  ],
+  "type": "Notice",
+  "agencies": [
+   {
+    "raw_name": "FEDERAL COMMUNICATIONS COMMISSION",
+    "name": "Federal Communications Commission",
+    "id": 161,
+    "url": "https://www.federalregister.gov/agencies/federal-communications-commission",
+    "json_url": "https://www.federalregister.gov/api/v1/agencies/161",
+    "parent_id": null,
+    "slug": "federal-communications-commission"
+   }
+  ],
+  "comments_close_on": "2026-10-20",
+  "publication_date": "2026-10-19",
+  "abstract": "In this document, the Wireless Telecommunications Bureau (Bureau) invites interested parties to comment on the Upper C-band Transition Preliminary Cost Catalog (Cost Catalog), which is attached as Attachment A. The Cost Catalog contains preliminary estimates of reasonable and necessary transition costs that eligible space station operators and incumbent earth station operators (collectively, incumbents) may incur as they transition out of 4.0-4.16 GHz to make 160 megahertz of mid-band spectrum available to 3.7 GHz Service licensees for flexible use throughout the contiguous United States. The Cost Catalog also includes the payment categories for incumbent earth station operators that elect lump sum reimbursement in lieu of actual cost reimbursement. In Upper C-band (3.98-4.2 GHz); Expanding Flexible Use of the 3.7 to 4.2 GHz Band, GN Docket Nos. 25-59 and 18-122, Report and Order, Order of Proposed Modification, and Order on Reconsideration, FCC 26-46 (July 24, 2026) (Upper C-band R&O), the Commission established that new 3.7 GHz Service licensees will reimburse incumbents for their reasonable and necessary relocation costs to transition out of 4.0-4.16 GHz and directed the Bureau to develop the Cost Catalog."
+ },
+ {
+  "document_number": "2026-21280",
+  "title": "Wireless Telecommunications Bureau Seeks Comment on Proposed Rebate Categories and Amounts for Radio Altimeter Retrofits To Support the Upper C-band Transition",
+  "action": "Notice; solicitation of comments.",
+  "docket_ids": [
+   "GN Docket No. 25-59",
+   "DA 26-1076",
+   "FR ID 372889"
+  ],
+  "type": "Notice",
+  "agencies": [
+   {
+    "raw_name": "FEDERAL COMMUNICATIONS COMMISSION",
+    "name": "Federal Communications Commission",
+    "id": 161,
+    "url": "https://www.federalregister.gov/agencies/federal-communications-commission",
+    "json_url": "https://www.federalregister.gov/api/v1/agencies/161",
+    "parent_id": null,
+    "slug": "federal-communications-commission"
+   }
+  ],
+  "comments_close_on": "2026-10-26",
+  "publication_date": "2026-10-19",
+  "abstract": "In this document, the Wireless Telecommunications Bureau (Bureau) invites interested parties to comment on proposed categories, dollar amounts, and any other relevant information or procedures in connection with rebates to support retrofits of radio altimeters mandated by the Federal Aviation Administration (FAA) to facilitate the introduction of terrestrial wireless services in the Upper C-band. In Upper C-band (3.98-4.2 GHz); Expanding Flexible Use of the 3.7 to 4.2 GHz Band, GN Docket Nos. 25-59 and 18-122, Report and Order, Order of Proposed Modification, and Order on Reconsideration, FCC 26-46 (July 24, 2026) (Upper C-band R&O), the Commission established that new 3.7 GHz Service licensees will provide rebates to defined classes of eligible aircraft owners and operators to facilitate their compliance with the FAA's radio altimeter retrofit requirements and directed the Bureau to develop and seek public comment on its proposed rebate categories, dollar amounts, and other relevant procedures for administering the rebates."
+ },
+ {
+  "document_number": "2026-17193",
+  "title": "Comment Sought on Prohibiting the Importation and Marketing of Certain Covered UAS and UAS Critical Components and Equipment Listed in Section 1709 of FY2025 NDAA",
+  "action": "Notice; request for comments.",
+  "docket_ids": [
+   "PSHSB & OET: PS Docket No. 26-184",
+   "DA 26-832",
+   "FR ID 362881"
+  ],
+  "type": "Notice",
+  "agencies": [
+   {
+    "raw_name": "FEDERAL COMMUNICATIONS COMMISSION",
+    "name": "Federal Communications Commission",
+    "id": 161,
+    "url": "https://www.federalregister.gov/agencies/federal-communications-commission",
+    "json_url": "https://www.federalregister.gov/api/v1/agencies/161",
+    "parent_id": null,
+    "slug": "federal-communications-commission"
+   }
+  ],
+  "comments_close_on": "2026-09-23",
+  "publication_date": "2026-08-24",
+  "abstract": "In this document, the Public Safety and Homeland Security Bureau (PSHSB) and the Office of Engineering and Technology (OET) seek comment on proposing to prohibit the continued importation and marketing of certain previously authorized equipment that has been determined to pose an unacceptable risk to the national security of the United States and to the safety and security of United States persons. Through this Public Notice, PSHSB and OET propose to apply such prohibitions to certain previously-authorized foreign-produced uncrewed aircraft systems (UAS) and UAS critical components, and certain communications and video surveillance equipment listed in section 1709 of the Servicemember Quality of Life Improvement and National Defense Authorization Act for Fiscal Year 2025 (FY2025 NDAA), added to the Covered List in December 2025."
+ },
+ {
+  "document_number": "2026-15659",
+  "title": "Seeking Comment on Prohibiting the Importation and Marketing of Certain Foreign-Produced Military-Grade Uncrewed Aircraft Systems (UAS) and UAS Critical Components for Non-U.S. Government, Including Those With Swarming Capabilities",
+  "action": "Request for comments.",
+  "docket_ids": [
+   "PSHSB & OET: PS Docket No. 26-189",
+   "DA 26-758",
+   "FR ID 359960"
+  ],
+  "type": "Notice",
+  "agencies": [
+   {
+    "raw_name": "FEDERAL COMMUNICATIONS COMMISSION",
+    "name": "Federal Communications Commission",
+    "id": 161,
+    "url": "https://www.federalregister.gov/agencies/federal-communications-commission",
+    "json_url": "https://www.federalregister.gov/api/v1/agencies/161",
+    "parent_id": null,
+    "slug": "federal-communications-commission"
+   }
+  ],
+  "comments_close_on": "2026-09-02",
+  "publication_date": "2026-08-03",
+  "abstract": "In this document, the Public Safety and Homeland Security Bureau (PSHSB) and the Office of Engineering and Technology (OET) seek comment on proposing to prohibit the continued importation and marketing of certain military-grade foreign-made UAS and UAS critical components that are found on the Federal Communications Commission's (FCC) Covered List. Through this Public Notice, acting pursuant to section 2.939 of the Federal Communications Commission's rules, PSHSB and OET propose to apply such prohibitions given that these devices have been found to pose an unacceptable risk to the national security of the United States and to the safety and security of United States persons pursuant to the Secure and Trusted Communications Act of 2019."
+ },
+ {
+  "document_number": "2026-15418",
+  "title": "Seeking Comment on Prohibiting the Importation and Marketing of Certain Covered UAS and UAS Critical Components and Equipment Listed in Section 1709 of FY2025 NDAA.",
+  "action": "Request for comments.",
+  "docket_ids": [
+   "PSHSB & OET: PS Docket No. 26-184",
+   "DA 26-742",
+   "FR ID 359713"
+  ],
+  "type": "Notice",
+  "agencies": [
+   {
+    "raw_name": "FEDERAL COMMUNICATIONS COMMISSION",
+    "name": "Federal Communications Commission",
+    "id": 161,
+    "url": "https://www.federalregister.gov/agencies/federal-communications-commission",
+    "json_url": "https://www.federalregister.gov/api/v1/agencies/161",
+    "parent_id": null,
+    "slug": "federal-communications-commission"
+   }
+  ],
+  "comments_close_on": "2026-08-31",
+  "publication_date": "2026-07-30",
+  "abstract": "In this document, the Public Safety and Homeland Security Bureau (PSHSB) and the Office of Engineering and Technology (OET) seek comment on proposing to prohibit the continued importation and marketing of certain previously authorized equipment that has been determined to pose an unacceptable risk to the national security of the United States or to the and security of United States persons. Through Public Notice, acting pursuant to section 2.939 of the Federal Communications Commission's rules, PSHSB and OET propose to apply such prohibitions to certain previously-authorized foreign-produced uncrewed aircraft systems (UAS) and UAS critical components, and certain communications and video surveillance equipment listed in section 1709 of the Servicemember Quality of Life Improvement and National Defense Authorization Act for Fiscal Year 2025 (FY2025 NDAA), added to the Covered List in December 2025."
+ },
+ {
+  "document_number": "2026-07381",
+  "title": "Unleashing American Drone Dominance",
+  "action": "Notice and request for comments.",
+  "docket_ids": [
+   "GN Docket No. 26-74",
+   "WT Docket Nos. 22-323 and 24-629",
+   "DA 26-314",
+   "FR ID 340786"
+  ],
+  "type": "Notice",
+  "agencies": [
+   {
+    "raw_name": "FEDERAL COMMUNICATIONS COMMISSION",
+    "name": "Federal Communications Commission",
+    "id": 161,
+    "url": "https://www.federalregister.gov/agencies/federal-communications-commission",
+    "json_url": "https://www.federalregister.gov/api/v1/agencies/161",
+    "parent_id": null,
+    "slug": "federal-communications-commission"
+   }
+  ],
+  "comments_close_on": "2026-05-01",
+  "publication_date": "2026-04-16",
+  "abstract": "In this document, the Federal Communications Commission (FCC or Commission) seeks comment on additional means by which the Commission can continue to fulfill its public interest mandate and achieve American drone dominance. The Commission's Wireless Telecommunications Bureau and Office of Engineering and Technology seek input on an array of reforms the Commission might take to unleash American drone dominance, including: alleviating unnecessary regulatory burdens; ensuring that American drone manufacturers and users have sufficient spectrum for drone testing and operations; facilitating and encouraging American firms' investment in drone capabilities, infrastructure development, and innovative and advanced capabilities; ensuring regulatory clarity and technical access for United States- based manufacturers and trusted suppliers; coordinating more effectively with other federal agencies; streamlining the Commission's experimental licensing rules; and establishing additional dedicated drone innovation zones or testbeds in partnership with other entities."
+ }
+]

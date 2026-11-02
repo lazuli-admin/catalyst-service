@@ -338,19 +338,21 @@ export function classify(doc: FrApiDoc, window: { today: string; end: string }):
   return out;
 }
 
+/** Generic procedural terms: FCC bureau notices announcing these never become comment events. */
+export const PROCEDURAL_TERMS_RE =
+  /\b(?:extension|extend(?:s|ed|ing)?|sunshine|meetings?|correction|correcting|erratum|errata|waiver|debarment|suspension|advisory committee|hearing designation|terminat(?:e|es|ed|ion)|inflation|civil monetary penalt\w*|filing (?:window|schedule|deadline)|reminder|renewal)\b/i;
+
 /**
- * Determine if a document is procedural based on its type and docket IDs.
- * This rule is by document type/issuing level, not title.
- * FCC bureau-level public notices (delegated authority, docket_ids contain a "DA 26-1087" style number)
- * such as "Wireless Telecommunications Bureau Establishes a New Docket..." are procedural (filing windows, comment cycles on filings)
- * and must not become comment_close events. Substantive FCC rulemakings are type "Proposed Rule" with a Commission number ("FCC 26-51")
- * and must still be kept.
+ * Drop FCC bureau-level public notices (type Notice, delegated-authority "DA 26-1087" style docket number,
+ * no Commission number "FCC 26-51") whose title or action matches generic procedural terms (extensions,
+ * sunshine meetings, corrections, waivers, ...). Substantive FCC notices keep a DA number but never match;
+ * non-FCC agencies are never dropped here, and Proposed Rules / Commission-numbered docs are kept.
  */
 export function proceduralReason(doc: FrApiDoc): string | null {
-  if (doc.type === "Notice" && Array.isArray(doc.docket_ids)) {
+  if (doc.agencyLabel === "FCC" && doc.type === "Notice" && Array.isArray(doc.docket_ids)) {
     const hasDA = doc.docket_ids.some(id => /\bDA\s+\d{2}-\d+/i.test(id));
     const hasFCC = doc.docket_ids.some(id => /\bFCC\s+\d{2}-\d+/i.test(id));
-    if (hasDA && !hasFCC) {
+    if (hasDA && !hasFCC && PROCEDURAL_TERMS_RE.test(`${doc.title}\n${doc.action ?? ""}`)) {
       return "procedural:bureau-notice";
     }
   }
