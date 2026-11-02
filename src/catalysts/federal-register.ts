@@ -40,7 +40,7 @@ export function horizonEnd(today: string, horizonDays: number): string {
 
 export type FrDrop = { dedupeKey: string; title: string; reason: string };
 export type FrQueryReport = { name: string; pages: number; totalPages: number | null; docs: number; ok: boolean; error?: string };
-export type FrSyncReport = { at: string; complete: boolean; count: number; drops: FrDrop[]; skippedCurated: string[]; noOperativeMarker: string[]; permitsMemos: string[]; queries: FrQueryReport[]; curatedError?: string };
+export type FrSyncReport = { at: string; complete: boolean; count: number; presidentialDrops: number; drops: FrDrop[]; skippedCurated: string[]; noOperativeMarker: string[]; permitsMemos: string[]; queries: FrQueryReport[]; curatedError?: string };
 let lastFrSyncReport: FrSyncReport | null = null;
 export function getLastFrSyncReport(): FrSyncReport | null {
   return lastFrSyncReport;
@@ -74,7 +74,7 @@ export async function syncFederalRegister(
   } catch (err) {
     const message = errorMessage(err);
     log(`federal register abort: curated doc numbers unavailable: ${message}`);
-    lastFrSyncReport = { at: new Date().toISOString(), complete: false, count: 0, drops: [], skippedCurated: [], noOperativeMarker: [], permitsMemos: [], queries: [], curatedError: message };
+    lastFrSyncReport = { at: new Date().toISOString(), complete: false, count: 0, presidentialDrops: 0, drops: [], skippedCurated: [], noOperativeMarker: [], permitsMemos: [], queries: [], curatedError: message };
     return;
   }
   const runStart = new Date().toISOString();
@@ -158,6 +158,7 @@ export async function syncFederalRegister(
   const skippedCurated = new Set<string>();
   const noOperativeMarker = new Set<string>();
   const permitsMemos = new Set<string>();
+  const presidentialDocNumbers = new Set<string>();
   for (const target of targets) {
     const q: FrQueryReport = { name: target.name, pages: 0, totalPages: null, docs: 0, ok: true };
     try {
@@ -180,6 +181,7 @@ export async function syncFederalRegister(
           const htmlUrl = typeof row.html_url === "string" ? row.html_url : null;
           const abstract = typeof row.abstract === "string" ? row.abstract : "";
           if (!title || !documentNumber) continue;
+          if (target.presidential) presidentialDocNumbers.add(documentNumber);
           // Curated policy rows already carry this doc (data/policy-events.json); skip to avoid double counting.
           if (curatedDocNumbers.has(documentNumber)) {
             skippedCurated.add(documentNumber);
@@ -301,10 +303,11 @@ export async function syncFederalRegister(
         drops.push({ dedupeKey: row.dedupeKey, title: row.title, reason });
       }
     }
-    lastFrSyncReport = { at: new Date().toISOString(), complete: true, count: drops.length, drops, skippedCurated: [...skippedCurated].sort(), noOperativeMarker: [...noOperativeMarker].sort(), permitsMemos: [...permitsMemos].sort(), queries };
+    const presidentialDrops = drops.filter((d) => presidentialDocNumbers.has(d.dedupeKey.split(":")[1] ?? "")).length;
+    lastFrSyncReport = { at: new Date().toISOString(), complete: true, count: drops.length, presidentialDrops, drops, skippedCurated: [...skippedCurated].sort(), noOperativeMarker: [...noOperativeMarker].sort(), permitsMemos: [...permitsMemos].sort(), queries };
     for (const kind of FR_KINDS) await store.purgeStaleCatalysts(kind, opts.today, runStart, "fr:");
   } else {
-    lastFrSyncReport = { at: new Date().toISOString(), complete: false, count: 0, drops: [], skippedCurated: [...skippedCurated].sort(), noOperativeMarker: [...noOperativeMarker].sort(), permitsMemos: [...permitsMemos].sort(), queries };
+    lastFrSyncReport = { at: new Date().toISOString(), complete: false, count: 0, presidentialDrops: 0, drops: [], skippedCurated: [...skippedCurated].sort(), noOperativeMarker: [...noOperativeMarker].sort(), permitsMemos: [...permitsMemos].sort(), queries };
   }
 }
 

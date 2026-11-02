@@ -1,7 +1,8 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createSyncLock } from "../src/lock.js";
 import { resetFrSyncReportForTests, syncFederalRegister } from "../src/catalysts/federal-register.js";
-import { buildServer, isLoopbackHost } from "../src/server.js";
+import { buildServer, frAlertFrom, isLoopbackHost } from "../src/server.js";
+import type { FrSyncReport } from "../src/catalysts/federal-register.js";
 import { deps, memoryStore } from "./helpers.js";
 
 let app: Awaited<ReturnType<typeof buildServer>>;
@@ -230,5 +231,14 @@ describe("host key requirement and lock integration", () => {
     expect(afterOk.locks["source-poll"]!.lastOk).toEqual(expect.any(String));
     expect(afterOk.locks["source-poll"]!.lastError).toBeNull();
     await app.close();
+  });
+});
+
+describe("frAlertFrom", () => {
+  const report = (presidentialDrops: number) => ({ presidentialDrops }) as FrSyncReport;
+  it("flags degraded when presidential drops exist, null otherwise", () => {
+    expect(frAlertFrom(report(2))).toEqual({ degraded: true, reason: "presidential frDrops", count: 2 });
+    expect(frAlertFrom(report(0))).toBeNull();
+    expect(frAlertFrom(null)).toBeNull();
   });
 });
