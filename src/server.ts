@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { catalystDensity } from "./catalysts/density.js";
-import { getLastFrSyncReport } from "./catalysts/federal-register.js";
+import { getLastFrSyncReport, type FrSyncReport } from "./catalysts/federal-register.js";
 import { rankCatalysts } from "./catalysts/ranked.js";
 import { isDate, renderCalendarPage, weekSunday } from "./catalysts/page.js";
 import { addDays, marketToday, systemClock } from "./clock.js";
@@ -86,6 +86,10 @@ export function isLoopbackHost(host: string): boolean {
   return h === "127.0.0.1" || h === "::1" || h === "localhost";
 }
 
+export function frAlertFrom(report: FrSyncReport | null): { degraded: true; reason: string; count: number } | null {
+  return report && report.presidentialDrops > 0 ? { degraded: true, reason: "presidential frDrops", count: report.presidentialDrops } : null;
+}
+
 export function buildServer(store: Store, deps: PipelineDeps, opts: { lock?: SyncLock; host?: string } = {}): FastifyInstance {
   const clock = deps.clock ?? systemClock;
   const lock = opts.lock ?? createSyncLock();
@@ -121,6 +125,7 @@ export function buildServer(store: Store, deps: PipelineDeps, opts: { lock?: Syn
       frNoOperativeMarker: report ? report.noOperativeMarker : null,
       frPermitsMemos: report ? { count: report.permitsMemos.length, docs: report.permitsMemos } : null,
       frCuratedError: report ? (report.curatedError ?? null) : null,
+      frAlert: frAlertFrom(report),
     };
   });
   app.get("/source-types", async () => listAdapters());
