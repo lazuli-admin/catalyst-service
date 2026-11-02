@@ -33,16 +33,16 @@ describe("consentPartyTickers with injected universe", () => {
     { name: "Aurobindo", ticker: "AUROBINDO", names: ["aurobindo"] },
   ];
   it("matches a listed party", () => {
-    expect(consentPartyTickers(SEVITA_BTSG, injected)).toEqual([{ ticker: "BTSG", name: "BrightSpring" }]);
+    expect(consentPartyTickers(SEVITA_BTSG, injected).map(m => m.ticker)).toEqual(["BTSG"]);
   });
   it("matches the other listed party", () => {
-    expect(consentPartyTickers(AUROBINDO, injected)).toEqual([{ ticker: "AUROBINDO", name: "Aurobindo" }]);
+    expect(consentPartyTickers(AUROBINDO, injected).map(m => m.ticker)).toEqual(["AUROBINDO"]);
   });
 });
 
 describe("consentPartyTickers with the real COMPANY_UNIVERSE", () => {
   it("keeps Nvidia consent orders", () => {
-    expect(consentPartyTickers(NVDA_TITLE)).toEqual([{ ticker: "NVDA", name: "Nvidia" }]);
+    expect(consentPartyTickers(NVDA_TITLE).map(m => m.ticker)).toEqual(["NVDA"]);
     expect(isRelevant({ title: NVDA_TITLE })).toBe(true);
     expect(topicTags({ title: NVDA_TITLE }).affectedTickers).toContain("NVDA");
   });
@@ -51,7 +51,7 @@ describe("consentPartyTickers with the real COMPANY_UNIVERSE", () => {
     expect(isRelevant({ title: NEAR_MISS_UNLISTED })).toBe(false);
   });
   it("never matches substrings of company names", () => {
-    expect(consentPartyTickers(NEAR_MISS_GENERIC)).toEqual([]);
+    expect(consentPartyTickers(NEAR_MISS_GENERIC).map(m => m.ticker)).toEqual([]);
   });
   it("ignores titles without consent/merger language", () => {
     expect(consentPartyTickers("Oracle Example Notice")).toEqual([]);
@@ -59,10 +59,14 @@ describe("consentPartyTickers with the real COMPANY_UNIVERSE", () => {
 });
 
 describe("COMPANY_UNIVERSE contents", () => {
-  it("excludes BrightSpring and Aurobindo (not in the preset universe today)", () => {
-    expect(COMPANY_UNIVERSE.some((c) => /brightspring/i.test(c.name))).toBe(false);
+  it("includes BrightSpring via SEC universe", () => {
+    // BrightSpring should now be included via SEC data since it's in the snapshot
+    expect(COMPANY_UNIVERSE.some((c) => /brightspring/i.test(c.name))).toBe(true);
+    expect(consentPartyTickers(SEVITA_BTSG).map(m => m.ticker)).toEqual(["BTSG"]);
+  });
+  it("excludes Aurobindo (not in SEC universe)", () => {
+    // Aurobindo is not in the SEC data, so it should not be matched
     expect(COMPANY_UNIVERSE.some((c) => /aurobindo/i.test(c.name))).toBe(false);
-    expect(consentPartyTickers(SEVITA_BTSG)).toEqual([]);
     expect(consentPartyTickers(AUROBINDO)).toEqual([]);
   });
   it("excludes government agencies and bodies", () => {
@@ -71,20 +75,20 @@ describe("COMPANY_UNIVERSE contents", () => {
       expect(COMPANY_UNIVERSE.some((c) => c.name === name)).toBe(false);
     }
   });
-  it("buildUniverse returns the same universe by default", () => {
-    expect(buildUniverse()).toEqual(COMPANY_UNIVERSE);
+  it("COMPANY_UNIVERSE starts with the preset universe", () => {
+    expect(COMPANY_UNIVERSE.slice(0, buildUniverse().length)).toEqual(buildUniverse());
   });
   it("resolves Amazon to AMZN, not AWS", () => {
     const amzn = COMPANY_UNIVERSE.find((c) => c.name === "Amazon");
     expect(amzn?.ticker).toBe("AMZN");
     expect(amzn?.names).not.toContain("amzn");
-    expect(consentPartyTickers("Amazon and Example Co.; Analysis of Proposed Agreement Containing Consent Orders To Aid Public Comment")).toEqual([{ ticker: "AMZN", name: "Amazon" }]);
+    expect(consentPartyTickers("Amazon and Example Co.; Analysis of Proposed Agreement Containing Consent Orders To Aid Public Comment").map(m => m.ticker)).toEqual(["AMZN"]);
   });
   it("matches AMD via Advanced Micro Devices", () => {
     const amd = COMPANY_UNIVERSE.find((c) => c.name === "AMD");
     expect(amd?.ticker).toBe("AMD");
     expect(amd?.names).toContain("advanced micro devices");
-    expect(consentPartyTickers("Advanced Micro Devices and Example Co.; Analysis of Proposed Agreement Containing Consent Orders To Aid Public Comment")).toEqual([{ ticker: "AMD", name: "AMD" }]);
+    expect(consentPartyTickers("Advanced Micro Devices and Example Co.; Analysis of Proposed Agreement Containing Consent Orders To Aid Public Comment").map(m => m.ticker)).toEqual(["AMD"]);
   });
   it("maps Circle to CRCL iff CRCL is in PRESET_TRADES tickers", () => {
     const crclListed = PRESET_TRADES.some((t) => t.tickers.includes("CRCL"));

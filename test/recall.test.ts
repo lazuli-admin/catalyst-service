@@ -58,8 +58,7 @@ const KNOWN_MISSES: Record<string, string> = {
     "clearing agency registration kept by design (matches clearing/registration topic) (known FP)",
   "2026-03237":
     "SRO crypto-options position-limit filing kept via crypto topic (known FP)",
-  "2026-02458":
-    "FTC consent order analysis to aid public comment; parties not in preset company universe (known FN)",
+
   "2026-12612":
     "FTC consent order analysis to aid public comment; parties not in preset company universe (known FN)",
 };
