@@ -34,6 +34,12 @@ describe("fr_text_cache", () => {
     expect(await store.getFrText("2026-26301")).toBe(RAW_TEXT + " amended");
   });
 
+  it("putFrText strips NUL characters so SQLite does not truncate the body", async () => {
+    const store = await memoryStore();
+    await store.putFrText("2026-26301", "head\u0000\nNOW, THEREFORE, I do hereby proclaim");
+    expect(await store.getFrText("2026-26301")).toContain("proclaim");
+  });
+
   it("running the sync twice with the same store fetches the raw text only once", async () => {
     const store = await memoryStore();
     const rawUrls: string[] = [];
