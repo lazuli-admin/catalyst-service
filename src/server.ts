@@ -119,6 +119,7 @@ export function buildServer(store: Store, deps: PipelineDeps, opts: { lock?: Syn
       // null = no sync has run yet in this process (not the same as a sync with zero findings).
       frSkippedCurated: report ? report.skippedCurated : null,
       frNoOperativeMarker: report ? report.noOperativeMarker : null,
+      frPermitsMemos: report ? { count: report.permitsMemos.length, docs: report.permitsMemos } : null,
       frCuratedError: report ? (report.curatedError ?? null) : null,
     };
   });

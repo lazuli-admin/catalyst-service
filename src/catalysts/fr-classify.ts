@@ -122,6 +122,8 @@ const ROLE_EFFECTIVE_RE = new RegExp(String.raw`\b(?:12:01\s*a\.m\. [a-z ]{0,60}
 /** Text markers that open the operative part of a presidential document (order, proclamation, section heading). */
 export const PRESIDENTIAL_OPERATIVE_MARKERS: RegExp[] = [
   /proclaim\s+as\s+follows/i,
+  /\bdo\s+(?:hereby\s+)?proclaim\b/i,
+  /\bNOW,?\s+THEREFORE,?\s+I,[\s\S]{0,400}?\b(?:do\s+(?:hereby\s+)?)?proclaim\b/i,
   /(?:it\s+is\s+)?hereby\s+(?:determine\s+and\s+)?order(?:ed)?\b/i,
   /\bI\s+hereby\s+direct\b/i,
   /\bI\s+hereby\s+determine\b/i,
