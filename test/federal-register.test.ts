@@ -919,17 +919,17 @@ describe("FR result cap, empty-page guard, and bounded retry", () => {
     expect(delays.every((d) => d === 250)).toBe(true);
   });
 
-  it("fixture: FCC bureau notice 2026-21731 (DA docket, type Notice) is procedural even when topic-relevant -> no catalyst", async () => {
+  it("FCC bureau extension notice (DA docket, type Notice, procedural title) is dropped even when topic-relevant -> no catalyst", async () => {
     const FCC = "federal-communications-commission";
     const fetchImpl = mockFetch({
       [FCC]: {
         results: [
           {
-            title: "Wireless Telecommunications Bureau Establishes a New Docket for Spectrum Sharing",
+            title: "Wireless Telecommunications Bureau Grants Extension of Comment Deadline for Spectrum Sharing",
             type: "Notice",
             abstract: "",
-            document_number: "2026-21731",
-            html_url: "https://www.federalregister.gov/d/2026-21731",
+            document_number: "9999-00731",
+            html_url: "https://www.federalregister.gov/d/9999-00731",
             comments_close_on: "2026-11-10",
             docket_ids: ["GN Docket Nos. 25-59 and 26-289", "DA 26-1087", "FR ID 373607"],
           },
