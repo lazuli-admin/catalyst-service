@@ -95,6 +95,14 @@ const CONSENT_TITLE_RE = /;\s*analysis of (?:proposed )?(?:agreement|consent ord
 export const COMMON_WORD_NAMES = new Set(["apple", "target", "visa", "gap", "square", "block", "oracle", "amazon", "monster", "match", "shell", "sun", "unity", "snap", "ball", "crown", "fox", "news", "global", "general", "united", "american", "first", "national"]);
 export const EXPLICIT_CONSENT_RE = /;\s*analysis of (?:proposed )?(?:agreement|consent order)|consent (?:order|agreement|decree)s?\b|proposed final judgment|\bmerger\b/i;
 const SUFFIX_IN_PARTY_RE = /\b(?:inc|incorporated|corp|corporation|co|company|plc|ltd|limited|llc|l\.?p|holdings?|group)\b\.?\s*$/i;
+export const GENERIC_PREFIX_WORDS = new Set(["american", "general", "first", "national", "united", "global", "international", "new", "north", "south", "western", "eastern", "pacific", "atlantic", "capital", "financial", "energy", "bank", "community", "standard"]);
+
+/** A SEC prefix match is allowed only when it is specific enough: >= 2 tokens, or a single token of >= 8 chars that is not a generic/common word. */
+function prefixAllowed(norm: string): boolean {
+  const words = norm.split(" ");
+  if (words.length >= 2) return true;
+  return norm.length >= 8 && !GENERIC_PREFIX_WORDS.has(norm) && !COMMON_WORD_NAMES.has(norm);
+}
 const isShortOrCommon = (norm: string): boolean => norm.length < 6 || COMMON_WORD_NAMES.has(norm);
 
 const secPrefixesCache = new WeakMap<UniverseCompany[], Map<string, Set<string>>>();
@@ -141,10 +149,10 @@ export function consentPartyTickers(
       hit = presets.length === 1 ? presets[0] : undefined;
     }
     // SEC legal names carry descriptors ("BrightSpring Health Services, Inc."); titles use the short name.
-    // A whole-word prefix counts only when unique in the SEC list and the name is not short/common.
+    // A whole-word prefix counts only when unique in the SEC list, specific enough, and the name is not short/common.
     if (!hit && !shortOrCommon) {
       const t = secPrefixes(universe).get(norm);
-      if (t && t.size === 1) { const tk = [...t][0]; hit = universe.find((c) => c.ticker === tk); }
+      if (t && t.size === 1 && prefixAllowed(norm)) { const tk = [...t][0]; hit = universe.find((c) => c.ticker === tk); }
     }
     if (hit) matches.set(hit.ticker, hit.name);
   }

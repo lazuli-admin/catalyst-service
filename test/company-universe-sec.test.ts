@@ -122,4 +122,52 @@ describe("consentPartyTickers with SEC data", () => {
     const result = consentPartyTickers("Zenithco and Foo; Analysis of Proposed Consent Order", u);
     expect(result).toEqual([]);
   });
+
+  describe("prefix specificity rules", () => {
+    const u = buildSecUniverse([
+      { cik: 1, ticker: "BTSG", title: "Brightspring Health Services Inc" },
+      { cik: 2, ticker: "ACMA", title: "Acme Widgets Inc" },
+      { cik: 3, ticker: "ACMB", title: "Acme Widgets Holdings Inc" },
+      { cik: 4, ticker: "ZYXC", title: "Zyxcorp Industries Inc" },
+      { cik: 5, ticker: "NATF", title: "National Fakeco Inc" },
+      { cik: 6, ticker: "CMFA", title: "Community Fakeco Inc" },
+      { cik: 7, ticker: "ZYXO", title: "Zyxcorpo Industries Inc" },
+    ]);
+
+    it("matches a unique 2-token prefix", () => {
+      const result = consentPartyTickers("Brightspring Health and Foo; Analysis of Proposed Consent Order", u);
+      expect(result.map(m => m.ticker)).toEqual(["BTSG"]);
+    });
+
+    it("matches a unique single token of >= 8 chars", () => {
+      const result = consentPartyTickers("Brightspring and Foo; Analysis of Proposed Consent Order", u);
+      expect(result.map(m => m.ticker)).toEqual(["BTSG"]);
+    });
+
+    it("does not match an ambiguous multi-token prefix", () => {
+      // Both ACMA and ACMB share the prefix "acme widgets"
+      const result = consentPartyTickers("Acme Widgets and Foo; Analysis of Proposed Consent Order", u);
+      expect(result).toEqual([]);
+    });
+
+    it("does not match a unique single token of < 8 chars (7 chars passes the <6 short guard)", () => {
+      const result = consentPartyTickers("Zyxcorp and Foo; Analysis of Proposed Consent Order", u);
+      expect(result).toEqual([]);
+    });
+
+    it("does not match a generic single-token prefix (in GENERIC_PREFIX_WORDS, not COMMON_WORD_NAMES)", () => {
+      const result = consentPartyTickers("Community and Foo; Analysis of Proposed Consent Order", u);
+      expect(result).toEqual([]);
+    });
+
+    it("matches a unique single token of exactly 8 chars", () => {
+      const result = consentPartyTickers("Zyxcorpo and Foo; Analysis of Proposed Consent Order", u);
+      expect(result.map(m => m.ticker)).toEqual(["ZYXO"]);
+    });
+
+    it("does not match a generic single-token prefix", () => {
+      const result = consentPartyTickers("National and Foo; Analysis of Proposed Consent Order", u);
+      expect(result).toEqual([]);
+    });
+  });
 });

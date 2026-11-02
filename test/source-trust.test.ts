@@ -116,6 +116,61 @@ describe("source trust", () => {
     expect(result.sourceTier).toBe(1);
   });
 
+  it("upsert overwrites a stale row's tier/kind/source_url (no MIN-tier preference)", async () => {
+    const store = await memoryStore();
+    const dedupeKey = "fr:9999-00001:2026-11-20";
+    // Simulate a stale row written before trust enforcement: tier 1 regulatory_decision from a wire URL.
+    await store.client.execute(
+      `INSERT INTO catalysts (id, ticker, title, kind, status, date_start, date_end, date_precision, confidence, themes, affected_tickers, source_tier, source_url, dedupe_key, created_at, updated_at)
+       VALUES ('c1', 'NVDA', 'Old title', 'regulatory_decision', 'confirmed', '2026-11-20', '2026-11-20', 'exact', 0.9, '[]', '[]', 1, 'https://www.businesswire.com/news/x', ?, '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`,
+      [dedupeKey],
+    );
+    const result = await store.upsertCatalyst({
+      ticker: "NVDA",
+      title: "Some regulatory decision",
+      kind: "regulatory_decision",
+      status: "confirmed",
+      dateStart: "2026-11-20",
+      dateEnd: "2026-11-20",
+      datePrecision: "exact",
+      confidence: 0.9,
+      sourceTier: 2,
+      themes: ["ai"],
+      affectedTickers: ["NVDA"],
+      sourceUrl: "https://www.businesswire.com/news/x",
+      observationId: null,
+      dedupeKey,
+    });
+    expect(result.sourceTier).toBe(2);
+    expect(result.kind).toBe("other");
+    expect(result.status).toBe("lead");
+  });
+
+  it("recomputeTrust downgrades a stale tier-1 regulatory_decision row with a legacy key", async () => {
+    const store = await memoryStore();
+    await store.client.execute(
+      `INSERT INTO catalysts (id, ticker, title, kind, status, date_start, date_end, date_precision, confidence, themes, affected_tickers, source_tier, source_url, dedupe_key, created_at, updated_at)
+       VALUES ('c1', 'NVDA', 'Old title', 'regulatory_decision', 'confirmed', '2026-11-20', '2026-11-20', 'exact', 0.9, '[]', '[]', 1, 'https://www.prnewswire.com/news-releases/some-news-123456789.html', '-|regulatory_decision|2026-11|natura resources joins texas a m', '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`,
+    );
+    const changes = await store.recomputeTrust();
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({ id: "c1", dedupeKey: "-|regulatory_decision|2026-11|natura resources joins texas a m", from: { tier: 1, kind: "regulatory_decision", status: "confirmed" }, to: { tier: 2, kind: "other", status: "lead" } });
+    // The row is repaired in place, never deleted.
+    const remaining = await store.client.execute("SELECT COUNT(*) AS n FROM catalysts");
+    expect(Number(remaining.rows[0]!.n)).toBe(1);
+    // Idempotent: a second pass finds nothing left to change.
+    expect(await store.recomputeTrust()).toEqual([]);
+  });
+
+  it("recomputeTrust leaves a tier-1 federalregister.gov row unchanged", async () => {
+    const store = await memoryStore();
+    await store.client.execute(
+      `INSERT INTO catalysts (id, ticker, title, kind, status, date_start, date_end, date_precision, confidence, themes, affected_tickers, source_tier, source_url, dedupe_key, created_at, updated_at)
+       VALUES ('c1', 'NVDA', 'Some rule', 'regulatory_decision', 'confirmed', '2026-11-20', '2026-11-20', 'exact', 0.9, '[]', '[]', 1, 'https://www.federalregister.gov/documents/2024/01/01/2024-00001/some-rule', 'fr:2026-00001:2026-11-20', '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`,
+    );
+    expect(await store.recomputeTrust()).toEqual([]);
+  });
+
   it("regulatory_decision with legacy key '-|regulatory_decision|2026-01|some title' rejects", async () => {
     const store = await memoryStore();
     const catalyst: Omit<Catalyst, "id" | "createdAt" | "updatedAt"> = {
