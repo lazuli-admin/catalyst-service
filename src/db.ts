@@ -24,6 +24,7 @@ import type {
   TradeEntity,
 } from "./types.js";
 import { newId, nowIso } from "./util.js";
+import { enforceTrust } from "./catalysts/credibility.js";
 
 const MIGRATIONS = [
   `CREATE TABLE IF NOT EXISTS themes (
@@ -959,8 +960,10 @@ export class Store {
 
   /** Insert or update by dedupeKey; id and createdAt are kept on conflict. */
   async upsertCatalyst(c: CatalystInput): Promise<Catalyst> {
+    const t = enforceTrust(c);
+    if (!t) throw new Error(`rejected catalyst ${c.dedupeKey}: legacy title key for regulatory_decision`);
     const updatedAt = nowIso();
-    const datePrecision = c.datePrecision ?? (c.dateStart === c.dateEnd ? "exact" : "window");
+    const datePrecision = t.datePrecision ?? (t.dateStart === t.dateEnd ? "exact" : "window");
     const rows = await this.all(
       `INSERT INTO catalysts
        (id, ticker, title, kind, status, date_start, date_end, date_precision, date_source, confidence, themes, affected_tickers, source_tier, source_url, observation_id, dedupe_key, created_at, updated_at)
@@ -980,7 +983,7 @@ export class Store {
          source_url = CASE WHEN excluded.source_tier <= catalysts.source_tier THEN excluded.source_url ELSE catalysts.source_url END,
          updated_at = excluded.updated_at
        RETURNING *`,
-      [newId(), c.ticker, c.title, c.kind, c.status, c.dateStart, c.dateEnd, datePrecision, c.dateSource ?? null, c.confidence, json(c.themes), json(c.affectedTickers), c.sourceTier, c.sourceUrl, c.observationId, c.dedupeKey, updatedAt, updatedAt],
+      [newId(), t.ticker, t.title, t.kind, t.status, t.dateStart, t.dateEnd, datePrecision, t.dateSource ?? null, t.confidence, json(t.themes), json(t.affectedTickers), t.sourceTier, t.sourceUrl, t.observationId, t.dedupeKey, updatedAt, updatedAt],
     );
     if (!rows[0]) throw new Error("upsertCatalyst returned no row");
     return toCatalyst(rows[0]);

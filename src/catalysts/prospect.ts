@@ -70,8 +70,16 @@ export async function runProspect(deps: ProspectDeps, opts: { watchlist: string[
           for (const c of catalysts) {
             const decision = acceptCatalyst(c, tier, today);
             if (!decision) continue;
-            await store.upsertCatalyst({ ...c, status: decision === "lead" ? "lead" : c.status, sourceTier: tier, sourceUrl: item.url ?? null, observationId: null, dedupeKey: catalystDedupeKey(c) });
-            stored++;
+            try {
+              await store.upsertCatalyst({ ...c, status: decision === "lead" ? "lead" : c.status, sourceTier: tier, sourceUrl: item.url ?? null, observationId: null, dedupeKey: catalystDedupeKey(c) });
+              stored++;
+            } catch (err) {
+              if (typeof err === 'object' && err !== null && 'message' in err && typeof err.message === 'string' && err.message.startsWith('rejected catalyst')) {
+                // Skip catalysts rejected due to legacy title keys
+                continue;
+              }
+              throw err;
+            }
           }
         } catch (err) {
           log?.(`prospect: extract failed for "${item.title}": ${errorMessage(err)}`);
