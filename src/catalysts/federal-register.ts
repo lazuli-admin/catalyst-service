@@ -34,7 +34,7 @@ export const ELECTIONS: { date: string; title: string }[] = [
 
 const ELECTION_SOURCE_URL = "https://www.usa.gov/midterm-state-and-local-elections";
 
-function horizonEnd(today: string, horizonDays: number): string {
+export function horizonEnd(today: string, horizonDays: number): string {
   return new Date(Date.parse(`${today}T00:00:00Z`) + horizonDays * 86_400_000).toISOString().slice(0, 10); // clock-guard: pure-date
 }
 

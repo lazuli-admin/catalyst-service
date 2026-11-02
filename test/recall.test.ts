@@ -90,6 +90,18 @@ describe("fr-blind regression gates", () => {
     );
     console.log(`borderline: ${borderline.length} rows (excluded from gate)`);
   });
+
+  // Known borderline false positives in set 3: 2026-20714 (Cboe Clear clearing-agency
+  // registration) and 2026-03237 (MEMX crypto option position limits); the SEC procedural
+  // rule stays narrow and is intentionally not changed for them.
+  test("fr-blind-3 post-#29 gate: recall and default-view precision reported separately", () => {
+    const { fetched } = computeFrRecall(blind3);
+    expect(fetched.recall).toBeGreaterThanOrEqual(0.92);
+    expect(fetched.dvPrecision).toBeGreaterThanOrEqual(1);
+    console.log(
+      `default-view: tp=${fetched.dvTp} fp=${fetched.dvFp} precision=${fetched.dvPrecision.toFixed(3)}`,
+    );
+  });
 });
 
 describe("fr-blind per-doc", () => {
