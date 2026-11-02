@@ -176,6 +176,7 @@ const MIGRATIONS = [
   )`,
   `CREATE INDEX IF NOT EXISTS catalysts_ticker ON catalysts(ticker)`,
   `CREATE INDEX IF NOT EXISTS catalysts_date_start ON catalysts(date_start)`,
+  `CREATE TABLE IF NOT EXISTS fr_text_cache (document_number TEXT PRIMARY KEY, body TEXT NOT NULL, fetched_at TEXT NOT NULL)`,
 ];
 
 const json = (v: unknown): string => JSON.stringify(v);
@@ -943,6 +944,18 @@ export class Store {
     return await this.run(
       "DELETE FROM catalysts WHERE kind = ? AND date_start >= ? AND updated_at < ? AND dedupe_key LIKE ?",
       [kind, from, before, keyPrefix + "%"],
+    );
+  }
+
+  async getFrText(documentNumber: string): Promise<string | null> {
+    const rows = await this.all("SELECT body FROM fr_text_cache WHERE document_number = ?", [documentNumber]);
+    return rows.length > 0 ? String(rows[0]!.body) : null;
+  }
+
+  async putFrText(documentNumber: string, body: string): Promise<void> {
+    await this.run(
+      "INSERT INTO fr_text_cache (document_number, body, fetched_at) VALUES (?, ?, ?) ON CONFLICT(document_number) DO UPDATE SET body = excluded.body, fetched_at = excluded.fetched_at",
+      [documentNumber, body, nowIso()],
     );
   }
 

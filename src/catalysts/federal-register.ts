@@ -53,7 +53,7 @@ export function resetFrSyncReportForTests(): void {
 const FR_KINDS = ["rule_effective", "rule_expiry", "comment_close", "presidential_action", "regulatory_decision"] as const;
 
 export async function syncFederalRegister(
-  store: Pick<Store, "upsertCatalyst" | "purgeStaleCatalysts" | "listStaleCatalysts">,
+  store: Pick<Store, "upsertCatalyst" | "purgeStaleCatalysts" | "listStaleCatalysts"> & Partial<Pick<Store, "getFrText" | "putFrText">>,
   opts: {
     today: string;
     horizonDays: number;
@@ -79,6 +79,8 @@ export async function syncFederalRegister(
   }
   const runStart = new Date().toISOString();
   const dropReasons = new Map<string, string>();
+  let cacheHits = 0;
+  let cacheFetches = 0;
   const end = horizonEnd(opts.today, opts.horizonDays);
   const gte = new Date(Date.parse(`${opts.today}T00:00:00Z`) - 400 * 86_400_000).toISOString().slice(0, 10); // clock-guard: pure-date
   const fields = [
@@ -217,7 +219,16 @@ export async function syncFederalRegister(
           if (target.presidential) {
             const rawUrl = typeof row.raw_text_url === "string" ? row.raw_text_url : null;
             if (!rawUrl) throw new Error("missing raw_text_url");
-            doc.bodyText = await (await fetchResponse(rawUrl)).text();
+            // FR documents are immutable once published, so cache entries never expire.
+            const cached = await store.getFrText?.(documentNumber);
+            if (cached) {
+              doc.bodyText = cached;
+              cacheHits++;
+            } else {
+              doc.bodyText = await (await fetchResponse(rawUrl)).text();
+              cacheFetches++;
+              await store.putFrText?.(documentNumber, doc.bodyText);
+            }
             if (!hasOperativeMarker(doc)) {
               // Only Proclamations and Executive Orders reliably carry operative markers; memos/determinations/notices don't.
               if (doc.subtype === "Proclamation" || doc.subtype === "Executive Order") {
@@ -277,6 +288,7 @@ export async function syncFederalRegister(
     queries.push(q);
   }
 
+  log(`federal register text cache: ${cacheHits} hits, ${cacheFetches} fetches`);
   // Only delete rows the current code would have refreshed; a partial run must not wipe fresh-looking old rows.
   if (queries.every((q) => q.ok)) {
     const drops: FrDrop[] = [];
