@@ -2,7 +2,7 @@
 import type { Store } from "../db.js";
 import { errorMessage } from "../util.js";
 import { isNoise, isRelevant, NOISE_PATTERNS, topicTags } from "../topics.js";
-import { classify, hasOperativeMarker, type FrApiDoc } from "./fr-classify.js";
+import { classify, hasOperativeMarker, type FrApiDoc, proceduralReason } from "./fr-classify.js";
 import { curatedFrDocNumbers } from "./policy.js";
 
 const TIMEOUT_MS = 15_000;
@@ -93,6 +93,8 @@ export async function syncFederalRegister(
     "subtype",
     "raw_text_url",
     "dates",
+    "docket_ids",
+    "action",
   ]
     .map((f) => `fields[]=${f}`)
     .join("&");
@@ -194,12 +196,19 @@ export async function syncFederalRegister(
             dates: typeof row.dates === "string" ? row.dates : null,
             effective_on: typeof row.effective_on === "string" ? row.effective_on : null,
             comments_close_on: typeof row.comments_close_on === "string" ? row.comments_close_on : null,
+            docket_ids: Array.isArray(row.docket_ids) ? row.docket_ids.filter((d): d is string => typeof d === "string") : null,
+            action: typeof row.action === "string" ? row.action : null,
           };
           if (isNoise(doc)) {
             dropReasons.set(documentNumber, `noise:${NOISE_PATTERNS.find((p) => p.test(title))?.source ?? "correction"}`);
             continue;
           }
           if (!isRelevant(doc)) {
+          const proc = proceduralReason(doc);
+          if (proc) {
+            dropReasons.set(documentNumber, proc);
+            continue;
+          }
             dropReasons.set(documentNumber, "no topic match");
             continue;
           }
