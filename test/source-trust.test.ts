@@ -210,4 +210,107 @@ describe("source trust", () => {
     expect(input).toEqual(originalInput);
     expect(result).not.toBe(input);
   });
+
+  it("merge: official FR row stays when a wire write hits the same dedupe key", async () => {
+    const store = await memoryStore();
+    const dedupeKey = "fr:9999-00002:2026-11-20";
+    const fr = await store.upsertCatalyst({
+      ticker: "NVDA", title: "Some regulatory decision", kind: "regulatory_decision", status: "confirmed",
+      dateStart: "2026-11-20", dateEnd: "2026-11-20", datePrecision: "exact", confidence: 0.9,
+      themes: ["ai"], affectedTickers: ["NVDA"], sourceTier: 1,
+      sourceUrl: "https://www.federalregister.gov/documents/2026/01/01/9999-00002/some-decision",
+      observationId: null, dedupeKey,
+    });
+    const wire = await store.upsertCatalyst({
+      ticker: "NVDA", title: "Wire version", kind: "regulatory_decision", status: "confirmed",
+      dateStart: "2026-11-20", dateEnd: "2026-11-20", datePrecision: "exact", confidence: 0.95,
+      themes: ["ai"], affectedTickers: ["NVDA"], sourceTier: 2,
+      sourceUrl: "https://www.businesswire.com/news/home/20261120000000/en/Some-News",
+      observationId: null, dedupeKey,
+    });
+    expect(wire.id).toBe(fr.id);
+    expect(wire.sourceTier).toBe(1);
+    expect(wire.kind).toBe("regulatory_decision");
+    expect(wire.status).toBe("confirmed");
+    expect(wire.sourceUrl).toBe("https://www.federalregister.gov/documents/2026/01/01/9999-00002/some-decision");
+    // Dates/confidence still update from the incoming row.
+    expect(wire.confidence).toBe(0.95);
+  });
+
+  it("merge: an official FR write upgrades a wire row with the same dedupe key", async () => {
+    const store = await memoryStore();
+    const dedupeKey = "fr:9999-00002:2026-11-20";
+    const wire = await store.upsertCatalyst({
+      ticker: "NVDA", title: "Wire version", kind: "regulatory_decision", status: "confirmed",
+      dateStart: "2026-11-20", dateEnd: "2026-11-20", datePrecision: "exact", confidence: 0.9,
+      themes: ["ai"], affectedTickers: ["NVDA"], sourceTier: 2,
+      sourceUrl: "https://www.businesswire.com/news/home/20261120000000/en/Some-News",
+      observationId: null, dedupeKey,
+    });
+    expect(wire.sourceTier).toBe(2);
+    expect(wire.kind).toBe("other");
+    expect(wire.status).toBe("lead");
+    const fr = await store.upsertCatalyst({
+      ticker: "NVDA", title: "Some regulatory decision", kind: "regulatory_decision", status: "confirmed",
+      dateStart: "2026-11-20", dateEnd: "2026-11-20", datePrecision: "exact", confidence: 0.9,
+      themes: ["ai"], affectedTickers: ["NVDA"], sourceTier: 1,
+      sourceUrl: "https://www.federalregister.gov/documents/2026/01/01/9999-00002/some-decision",
+      observationId: null, dedupeKey,
+    });
+    expect(fr.id).toBe(wire.id);
+    expect(fr.sourceTier).toBe(1);
+    expect(fr.kind).toBe("regulatory_decision");
+    expect(fr.status).toBe("confirmed");
+    expect(fr.sourceUrl).toContain("federalregister.gov");
+  });
+
+  it("merge: stored source_tier is never trusted — poisoned tier-1 row with a wire URL loses to a wire write", async () => {
+    const store = await memoryStore();
+    const dedupeKey = "fr:9999-00003:2026-11-20";
+    await store.client.execute(
+      `INSERT INTO catalysts (id, ticker, title, kind, status, date_start, date_end, date_precision, confidence, themes, affected_tickers, source_tier, source_url, dedupe_key, created_at, updated_at)
+       VALUES ('c1', 'NVDA', 'Old title', 'regulatory_decision', 'confirmed', '2026-11-20', '2026-11-20', 'exact', 0.9, '[]', '[]', 1, 'https://www.businesswire.com/news/home/20261120000000/en/Old', ?, '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`,
+      [dedupeKey],
+    );
+    const result = await store.upsertCatalyst({
+      ticker: "NVDA", title: "Wire version", kind: "regulatory_decision", status: "confirmed",
+      dateStart: "2026-11-20", dateEnd: "2026-11-20", datePrecision: "exact", confidence: 0.9,
+      themes: ["ai"], affectedTickers: ["NVDA"], sourceTier: 1, // caller claims tier 1 — ignored
+      sourceUrl: "https://www.businesswire.com/news/home/20261120000000/en/New",
+      observationId: null, dedupeKey,
+    });
+    expect(result.sourceTier).toBe(2);
+    expect(result.kind).toBe("other");
+    expect(result.status).toBe("lead");
+  });
+
+  it("recomputeTrust backfills a null-URL earnings row to nasdaq.com tier 2, idempotently", async () => {
+    const store = await memoryStore();
+    await store.client.execute(
+      `INSERT INTO catalysts (id, ticker, title, kind, status, date_start, date_end, date_precision, confidence, themes, affected_tickers, source_tier, source_url, dedupe_key, created_at, updated_at)
+       VALUES ('c1', 'NVDA', 'NVIDIA earnings (bmo)', 'earnings', 'confirmed', '2026-11-20', '2026-11-20', 'exact', 0.95, '[]', '[]', 1, NULL, 'nasdaq:earnings:2026-11-20:nvda', '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`,
+    );
+    const changes = await store.recomputeTrust();
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({ id: "c1", to: { tier: 2 } });
+    const row = await store.client.execute("SELECT source_url, source_tier FROM catalysts WHERE id = 'c1'");
+    expect(String(row.rows[0]!.source_url)).toBe("https://www.nasdaq.com/market-activity/earnings?date=2026-11-20");
+    expect(Number(row.rows[0]!.source_tier)).toBe(2);
+    expect(await store.recomputeTrust()).toEqual([]);
+  });
+
+  it("recomputeTrust replaces a fabricated EDGAR source_url on an earnings row with the Nasdaq URL and re-tiers to 2, idempotently", async () => {
+    const store = await memoryStore();
+    await store.client.execute(
+      `INSERT INTO catalysts (id, ticker, title, kind, status, date_start, date_end, date_precision, confidence, themes, affected_tickers, source_tier, source_url, dedupe_key, created_at, updated_at)
+       VALUES ('c1', 'NVDA', 'NVIDIA earnings (bmo)', 'earnings', 'confirmed', '2026-11-20', '2026-11-20', 'exact', 0.95, '[]', '[]', 1, 'https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=NVDA&type=8-K', 'nasdaq:earnings:2026-11-20:nvda', '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z')`,
+    );
+    const changes = await store.recomputeTrust();
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({ id: "c1", from: { tier: 1 }, to: { tier: 2 } });
+    const row = await store.client.execute("SELECT source_url, source_tier FROM catalysts WHERE id = 'c1'");
+    expect(String(row.rows[0]!.source_url)).toBe("https://www.nasdaq.com/market-activity/earnings?date=2026-11-20");
+    expect(Number(row.rows[0]!.source_tier)).toBe(2);
+    expect(await store.recomputeTrust()).toEqual([]);
+  });
 });

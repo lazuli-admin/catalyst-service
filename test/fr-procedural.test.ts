@@ -48,6 +48,29 @@ describe("proceduralReason", () => {
     expect(proceduralReason(doc)).toBeNull();
   });
 
+  it("fixture 2026-21731: GN+DA dockets, type Notice -> procedural:bureau-notice", () => {
+    const doc: FrApiDoc = {
+      title: "Wireless Telecommunications Bureau Establishes a New Docket...",
+      type: "Notice",
+      docket_ids: ["GN Docket Nos. 25-59 and 26-289", "DA 26-1087", "FR ID 373607"],
+      comments_close_on: "2026-11-30",
+      document_number: "2026-21731",
+      agencyLabel: "FCC",
+    };
+    expect(proceduralReason(doc)).toBe("procedural:bureau-notice");
+  });
+
+  it("near-miss: Notice with a Commission number FCC 26-51 -> null", () => {
+    const doc: FrApiDoc = {
+      title: "Some Title",
+      type: "Notice",
+      docket_ids: ["WT Docket No. 26-1", "FCC 26-51"],
+      document_number: "test-6",
+      agencyLabel: "FCC",
+    };
+    expect(proceduralReason(doc)).toBeNull();
+  });
+
   it("Notice with no docket_ids -> null", () => {
     const doc: FrApiDoc = {
       title: "Some Title",
