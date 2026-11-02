@@ -24,7 +24,7 @@ import type {
   TradeEntity,
 } from "./types.js";
 import { newId, nowIso } from "./util.js";
-import { enforceTrust } from "./catalysts/credibility.js";
+import { enforceTrust, sourceTier } from "./catalysts/credibility.js";
 
 const MIGRATIONS = [
   `CREATE TABLE IF NOT EXISTS themes (
@@ -415,6 +415,11 @@ export class Store {
       // legacy, unused: kept to avoid a migration; no code reads or writes it
       await this.client.execute("ALTER TABLE catalysts ADD COLUMN impact_weight REAL");
     }
+    const recomputed = await this.recomputeTrust();
+    for (const c of recomputed) {
+      console.log(`trust recompute: ${c.id} ${c.dedupeKey} tier ${c.from.tier}->${c.to.tier} kind ${c.from.kind}->${c.to.kind} status ${c.from.status}->${c.to.status}`);
+    }
+    if (recomputed.length) console.log(`trust recompute: ${recomputed.length} row(s) updated`);
   }
 
   private async all(sql: string, args: InValue[] = []): Promise<Row[]> {
@@ -983,8 +988,8 @@ export class Store {
        (id, ticker, title, kind, status, date_start, date_end, date_precision, date_source, confidence, themes, affected_tickers, source_tier, source_url, observation_id, dedupe_key, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(dedupe_key) DO UPDATE SET
-         title = CASE WHEN excluded.source_tier <= catalysts.source_tier THEN excluded.title ELSE catalysts.title END,
-         kind = CASE WHEN excluded.source_tier <= catalysts.source_tier THEN excluded.kind ELSE catalysts.kind END,
+         title = excluded.title,
+         kind = excluded.kind,
          status = excluded.status,
          date_start = excluded.date_start,
          date_end = excluded.date_end,
@@ -993,14 +998,35 @@ export class Store {
          confidence = excluded.confidence,
          themes = excluded.themes,
          affected_tickers = excluded.affected_tickers,
-         source_tier = MIN(catalysts.source_tier, excluded.source_tier),
-         source_url = CASE WHEN excluded.source_tier <= catalysts.source_tier THEN excluded.source_url ELSE catalysts.source_url END,
+         source_tier = excluded.source_tier,
+         source_url = excluded.source_url,
          updated_at = excluded.updated_at
        RETURNING *`,
       [newId(), t.ticker, t.title, t.kind, t.status, t.dateStart, t.dateEnd, datePrecision, t.dateSource ?? null, t.confidence, json(t.themes), json(t.affectedTickers), t.sourceTier, t.sourceUrl, t.observationId, t.dedupeKey, updatedAt, updatedAt],
     );
     if (!rows[0]) throw new Error("upsertCatalyst returned no row");
     return toCatalyst(rows[0]);
+  }
+
+  /** Repair stale rows: recompute tier from the URL and downgrade non-primary regulatory decisions. Never deletes, never rejects legacy keys. */
+  async recomputeTrust(): Promise<
+    { id: string; dedupeKey: string; from: { tier: number; kind: string; status: string }; to: { tier: number; kind: string; status: string } }[]
+  > {
+    const rows = await this.all("SELECT id, title, kind, status, source_tier, source_url, dedupe_key FROM catalysts");
+    const changes: { id: string; dedupeKey: string; from: { tier: number; kind: string; status: string }; to: { tier: number; kind: string; status: string } }[] = [];
+    for (const r of rows) {
+      const from = { tier: Number(r.source_tier), kind: s(r.kind), status: s(r.status) };
+      const tier = sourceTier({ url: sOrNull(r.source_url), title: s(r.title) });
+      let { kind, status } = from;
+      if (kind === "regulatory_decision" && tier !== 1) {
+        kind = "other";
+        if (status === "confirmed" || status === "scheduled") status = "lead";
+      }
+      if (tier === from.tier && kind === from.kind && status === from.status) continue;
+      await this.run("UPDATE catalysts SET source_tier = ?, kind = ?, status = ? WHERE id = ?", [tier, kind, status, s(r.id)]);
+      changes.push({ id: s(r.id), dedupeKey: s(r.dedupe_key), from, to: { tier, kind, status } });
+    }
+    return changes;
   }
 
   /** Catalysts whose [dateStart, dateEnd] window overlaps [from, to]. */

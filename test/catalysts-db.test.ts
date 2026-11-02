@@ -38,19 +38,22 @@ describe("catalysts db", () => {
     expect(list[0]!.id).toBe(a.id);
   });
 
-  it("upsert updates title at equal tier, keeps old title at worse tier", async () => {
+  it("upsert always takes the new title, tier and source_url", async () => {
     const store = await memoryStore();
     const a = await store.upsertCatalyst({ ...base, title: "FOMC meeting", sourceUrl: "https://www.sec.gov/Archives/edgar/data/1018724/000162828024002399/tsla-20231231.htm" });
     const b = await store.upsertCatalyst({ ...base, title: "FOMC renamed", sourceUrl: "https://www.sec.gov/Archives/edgar/data/1018724/000162828024002399/tsla-20231231.htm" });
     expect(b.id).toBe(a.id);
     expect(b.title).toBe("FOMC renamed");
 
+    // A worse-tier source now overwrites the row instead of being ignored.
     const c = await store.upsertCatalyst({ ...base, title: "FOMC worse tier", sourceUrl: "https://www.reuters.com/some-article" });
     expect(c.id).toBe(a.id);
-    expect(c.title).toBe("FOMC renamed");
+    expect(c.title).toBe("FOMC worse tier");
+    expect(c.sourceTier).toBe(2);
+    expect(c.sourceUrl).toBe("https://www.reuters.com/some-article");
   });
 
-  it("upsert updates kind at equal tier, keeps old kind at worse tier", async () => {
+  it("upsert always takes the new kind", async () => {
     const store = await memoryStore();
     const a = await store.upsertCatalyst({ ...base, kind: "regulatory_decision", sourceUrl: "https://www.sec.gov/Archives/edgar/data/1018724/000162828024002399/tsla-20231231.htm" });
     const b = await store.upsertCatalyst({ ...base, kind: "comment_close", sourceUrl: "https://www.sec.gov/Archives/edgar/data/1018724/000162828024002399/tsla-20231231.htm" });
@@ -59,7 +62,7 @@ describe("catalysts db", () => {
 
     const c = await store.upsertCatalyst({ ...base, kind: "earnings", sourceUrl: "https://www.reuters.com/some-article" });
     expect(c.id).toBe(a.id);
-    expect(c.kind).toBe("comment_close");
+    expect(c.kind).toBe("earnings");
   });
 
   it("filters by window, ticker and theme", async () => {
