@@ -86,6 +86,17 @@ describe("consentPartyTickers with SEC data", () => {
     expect(consentPartyTickers("Visa and Foo; Analysis of Proposed Agreement Containing Consent Orders").map(m => m.ticker)).toEqual(["V"]);
   });
 
+  it("short/common bare names need a legal suffix or explicit consent/merger title", () => {
+    expect(consentPartyTickers("Apple and Orange Groves; acquisition of orchards").map(m => m.ticker)).not.toContain("AAPL");
+    expect(consentPartyTickers("Target and Foo Widgets; acquisition notice").map(m => m.ticker)).not.toContain("TGT");
+    expect(consentPartyTickers("Target and Foo Widgets; acquisition notice").map(m => m.ticker)).not.toContain("CBDY");
+    expect(consentPartyTickers("Visa and Foo Widgets; acquisition notice").map(m => m.ticker)).not.toContain("V");
+    expect(consentPartyTickers("Gap and Foo Widgets; acquisition notice").map(m => m.ticker)).not.toContain("GAP");
+
+    expect(consentPartyTickers("Visa and Foo Widgets; Analysis of Proposed Agreement Containing Consent Orders").map(m => m.ticker)).toContain("V");
+    expect(consentPartyTickers("Gap Inc. and Foo Widgets; acquisition notice").map(m => m.ticker)).toContain("GAP");
+  });
+
   it("matches an injected universe with a unique normalized name", () => {
     const u = buildSecUniverse([{ cik: 1, ticker: "TGT", title: "TARGET CORP" }]);
     const result = consentPartyTickers("Target Corporation and Foo Holdings; acquisition", u);
