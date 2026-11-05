@@ -6,6 +6,7 @@
 // fr-blind-2 (test/fixtures/fr-blind-2.json, seed-7 draw) is ALSO a REGRESSION set, not a
 // blind holdout, since it may have informed topic tuning.
 import { FR_AGENCIES, horizonEnd } from "./catalysts/federal-register.js";
+import { enforceTrust } from "./catalysts/credibility.js";
 import { classify, proceduralReason, type FrApiDoc } from "./catalysts/fr-classify.js";
 import { rankCatalysts } from "./catalysts/ranked.js";
 import type { Catalyst } from "./types.js";
@@ -24,6 +25,10 @@ export interface FrBlindRow {
   effective_on?: string | null;
   comments_close_on?: string | null;
   dates?: string | null;
+  subtype?: string | null;
+  docket_ids?: string[] | null;
+  action?: string | null;
+  body_text?: string | null;
 }
 
 /** FR_AGENCIES labels, keyed by slug. */
@@ -71,44 +76,90 @@ export interface FrRecall {
   borderline: { fetched: boolean; predicted: boolean; labeledRelevant: boolean; title: string }[];
 }
 
-/** Whether a doc the sync admits would survive the default view (rank gate) as of its publication date. */
+/** All FR_AGENCIES labels the sync would attach to this row's doc (empty if the doc is a
+ * Presidential Document, which uses a fixed "President" label, or is not admitted by type). */
+function docLabels(row: FrBlindRow): string[] {
+  if (row.type === "Presidential Document") return ["President"];
+  if (row.type !== "Rule" && row.type !== "Proposed Rule" && row.type !== "Notice") return [];
+  const labels = row.agency.split(";")
+    .map((name) => DISPLAY_TO_LABEL[name.trim()])
+    .filter((label): label is string => !!label && FR_LABELS.has(label));
+  const order = Object.values(FR_AGENCIES).map((a) => a.label);
+  return [...new Set(labels)].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+}
+
+function buildDocs(row: FrBlindRow): FrApiDoc[] {
+  const docs: FrApiDoc[] = [];
+  for (const label of docLabels(row)) {
+    const doc: FrApiDoc = {
+      title: row.title,
+      abstract: row.abstract ?? "",
+      type: row.type,
+      subtype: row.subtype ?? null,
+      document_number: row.document_number,
+      agencyLabel: label,
+      dates: row.dates ?? null,
+      effective_on: row.effective_on ?? null,
+      comments_close_on: row.comments_close_on ?? null,
+      docket_ids: row.docket_ids ?? null,
+      action: row.action ?? null,
+      html_url: null,
+      bodyText: row.body_text ?? null,
+    };
+    if (!isNoise(doc) && !proceduralReason(doc) && isRelevant(doc)) docs.push(doc);
+  }
+  return docs;
+}
+
+/** Whether the rank-gated default view would show this row's docs on SOME day: try several
+ * as-of days around each classified event date (the event day, the next day, and 90/180
+ * days earlier) and accept if any candidate day surfaces a surviving catalyst. */
 export function inDefaultView(row: FrBlindRow): boolean {
-  const firstAgency = row.agency.split(";")[0]?.trim() ?? "";
-  const doc: FrApiDoc = {
-    title: row.title,
-    abstract: row.abstract,
-    type: row.type,
-    document_number: row.document_number,
-    agencyLabel: row.type === "Presidential Document" ? "President" : DISPLAY_TO_LABEL[firstAgency] ?? firstAgency,
-    dates: row.dates ?? null,
-    effective_on: row.effective_on ?? null,
-    comments_close_on: row.comments_close_on ?? null,
-    html_url: null,
-  };
-  if (isNoise(doc) || !isRelevant(doc) || proceduralReason(doc)) return false;
-  const events = classify(doc, { today: row.publication_date, end: horizonEnd(row.publication_date, 180) });
-  const tags = topicTags(doc);
-  const cats: Catalyst[] = events.map((ev) => ({
-    id: "dv",
-    ticker: null,
-    title: ev.title,
-    kind: ev.kind,
-    status: "scheduled",
-    dateStart: ev.date,
-    dateEnd: ev.date,
-    datePrecision: ev.datePrecision,
-    dateSource: ev.dateSource,
-    confidence: 0.9,
-    themes: tags.themes,
-    affectedTickers: tags.affectedTickers,
-    sourceTier: 1,
-    sourceUrl: ev.sourceUrl,
-    observationId: null,
-    dedupeKey: ev.dedupeKey,
-    createdAt: "",
-    updatedAt: "",
-  }));
-  return rankCatalysts(cats, { asOf: row.publication_date }).length > 0;
+  const docs = buildDocs(row);
+  if (docs.length === 0) return false;
+  const dates = new Set<string>();
+  for (const doc of docs) {
+    for (const ev of classify(doc, { today: "0000-01-01", end: "9999-12-31" })) dates.add(ev.date);
+  }
+  const candidates = [...dates]
+    .flatMap((d) => [d, horizonEnd(d, 1), horizonEnd(d, -90), horizonEnd(d, -180)])
+    .sort();
+  return candidates.some((t) => atDay(docs, t));
+}
+
+function atDay(docs: FrApiDoc[], t: string): boolean {
+  const byKey = new Map<string, Catalyst>();
+  for (const doc of docs) {
+    const tags = topicTags(doc);
+    for (const ev of classify(doc, { today: t, end: horizonEnd(t, 180) })) {
+      const draft: Catalyst = {
+        id: "dv",
+        ticker: null,
+        title: ev.title,
+        kind: ev.kind,
+        status: "scheduled",
+        dateStart: ev.date,
+        dateEnd: ev.date,
+        datePrecision: ev.datePrecision,
+        dateSource: ev.dateSource,
+        confidence: 0.9,
+        themes: tags.themes,
+        affectedTickers: tags.affectedTickers,
+        sourceTier: 1,
+        sourceUrl: ev.sourceUrl,
+        observationId: null,
+        dedupeKey: ev.dedupeKey,
+        createdAt: "",
+        updatedAt: "",
+      };
+      const cat = enforceTrust(draft);
+      if (cat) byKey.set(ev.dedupeKey, cat);
+    }
+  }
+  const rows = [...byKey.values()].filter(
+    (c) => c.status !== "lead" && c.status !== "cancelled" && c.dateStart <= horizonEnd(t, 90) && c.dateEnd >= t,
+  );
+  return rankCatalysts(rows, { asOf: t }).length > 0;
 }
 
 function metrics(rows: FrBlindRow[]): RecallCounts {

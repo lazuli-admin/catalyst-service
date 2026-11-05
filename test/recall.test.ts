@@ -1,6 +1,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
-import { computeFrRecall, rowIsFetched, type FrBlindRow } from "../src/recall.js";
+import {
+  computeFrRecall,
+  inDefaultView,
+  rowIsFetched,
+  type FrBlindRow,
+} from "../src/recall.js";
 import { isRelevant, topicTags, TOPICS } from "../src/topics.js";
 import { TOPIC_KEEP_EXAMPLES } from "./fixtures/topic-keep-examples.js";
 
@@ -198,5 +203,17 @@ describe("every topic matches at least one fixture doc", () => {
       expect(isRelevant(frDoc), doc.title).toBe(true);
       expect(topicTags(frDoc).topics, doc.title).toContain(doc.topic);
     }
+  });
+});
+
+describe("inDefaultView live default-view docs", () => {
+  const defaultView = JSON.parse(
+    readFileSync(new URL("./fixtures/fr-default-view-3.json", import.meta.url), "utf8"),
+  ) as FrBlindRow[];
+
+  test.each(["2025-19846", "2026-00327", "2026-10398"])("%s is in default view", (docNumber) => {
+    const row = defaultView.find((r) => r.document_number === docNumber);
+    expect(row, `doc ${docNumber} missing from fixture`).toBeDefined();
+    expect(inDefaultView(row!)).toBe(true);
   });
 });

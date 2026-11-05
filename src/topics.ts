@@ -245,11 +245,21 @@ export const TOPICS: Topic[] = [
 // new preliminary/final determinations and orders are NOT noise and are picked up by the trade-remedy topic.
 // A Section 232 title overrides this pattern only (see isNoise).
 export const AD_CVD_RE =
-  /administrative reviews?|results of (the )?(antidumping|countervailing|expedited|changed circumstances|sunset)|rescission of (the )?(antidumping|countervailing|administrative|new shipper|.{0,40}review)|scope ruling|sunset reviews?|new shipper|changed circumstances review|continuation of (antidumping|countervailing)|covered merchandise referral|notice of court decision|circumvention inquir|anticircumvention|final results|preliminary results|postponement of preliminary|extension of (the )?time limit|revocation of (the )?(antidumping|countervailing|.{0,30}order)/i;
+  /administrative reviews?|results of (the )?(antidumping|countervailing|expedited|changed circumstances|sunset)|rescission of (the )?(antidumping|countervailing|administrative|new shipper|.{0,40}review)|scope ruling|sunset reviews?|new shipper|changed circumstances review|continuation of (antidumping|countervailing)|covered merchandise referral|notice of court decision|circumvention inquir|anticircumvention|final results|preliminary results|extension of (the )?time limit|revocation of (the )?(antidumping|countervailing|.{0,30}order)/i;
+
+// AD/CVD procedural scheduling notices are noise only when the postponement is the whole action;
+// a title that also announces an affirmative or negative determination is substantive (kept via trade-remedy).
+export const ADCVD_PROCEDURAL_RE =
+  /^(?!.*(?:affirmative|negative)[^]{0,40}determination|.*determination[^]{0,20}(?:affirmative|negative)).*(?:postponement of (?:preliminary|final) determinations?|extension of (?:the )?deadline for determining (?:the )?adequacy of (?:the )?(?:antidumping|countervailing) duty petition)/i;
+
+/** Purely administrative SEC rulemaking titles (infrastructure, paperwork, fee rates, standalone technical amendments). */
+export const SEC_ADMIN_LOW_IMPACT_RE =
+  /edgar filer manual|inline xbrl|electronic (delivery|submission|filing)s?\b|filing fee rate|fee rate advisory|^technical amendments?\b(?!.*\b(and|&)\s+\w)|^[^:;]{0,60}[:;]\s*technical amendments?$/i;
 
 /** One shared routine-paperwork noise list, applied to every agency. */
 export const NOISE_PATTERNS: RegExp[] = [
   AD_CVD_RE,
+  ADCVD_PROCEDURAL_RE,
   /information collection|submission (to|for) (the )?OMB|paperwork reduction/i,
   /^sunshine act/i,
   // SRO noise only: routine procedural/admin filings (fees, timing, technical/clarifying/conforming tweaks), not substantive rule filings.
@@ -284,6 +294,7 @@ export interface FrDoc {
   abstract?: string | null;
   type?: string | null;
   agency?: string;
+  agencyLabel?: string;
   documentNumber?: string;
 }
 
@@ -295,6 +306,9 @@ export function isNoise(doc: FrDoc): boolean {
   if (doc.documentNumber && /^C\d-/.test(doc.documentNumber)) return true; // correction documents
   const s232 = /section 232/i.test(doc.title);
   const text = doc.title;
+  // low-impact SEC administration (EDGAR/XBRL infrastructure, electronic submission, fee rates,
+  // standalone technical amendments) — scoped to SEC only
+  if (doc.agencyLabel === "SEC" && SEC_ADMIN_LOW_IMPACT_RE.test(text)) return true;
   for (const p of NOISE_PATTERNS) {
     if (p === AD_CVD_RE && s232) continue; // Section 232 titles override AD/CVD paperwork noise only
     if (p.test(text)) return true;
@@ -304,15 +318,92 @@ export function isNoise(doc: FrDoc): boolean {
 
 // Ceremonial/proclamation presidential documents (commemorations, honors, flag half-staff, holiday closings) are kept by default:
 // presidential relevance needs no topic, only absence of ceremony.
-export const CEREMONIAL_PRESIDENTIAL_RE = /^national\b[^;]{0,80}\b(?:day|week|month|year)\b|\b(?:day|week|month)\b,?\s+\d{4}$|\b(?:day|week|month)\s+of\s+(?:prayer|remembrance|observance|recognition|thanksgiving|mourning)\b|\bobservance\b|\banniversary\b|\bhonou?ring\b|\bin\s+(?:memory|honou?r)\s+of\b|\bdeath\s+of\b|\bhalf[- ]staff\b|\bflags?\b.{0,40}\bhalf\b|\bclosing\s+of\s+executive\s+departments\b|\bthanksgiving\s+day\b/i;
+const CEREMONIAL_PRESIDENTIAL_PARTS = [
+  "^national\\b[^;]{0,80}\\b(?:day|week|month|year)\\b",
+  "\\b(?:day|week|month)\\b,?\\s+\\d{4}$",
+  "\\b(?:day|week|month)\\s+of\\s+(?:prayer|remembrance|observance|recognition|thanksgiving|mourning)\\b",
+  "\\bobservance\\b",
+  "\\banniversary\\b",
+  "\\bhonou?ring\\b",
+  "\\bin\\s+(?:memory|honou?r)\\s+of\\b",
+  "\\bdeath\\s+of\\b",
+  "\\bhalf[- ]staff\\b",
+  "\\bflags?\\b.{0,40}\\bhalf\\b",
+  "\\bclosing\\s+of\\s+executive\\s+departments\\b",
+  "\\bthanksgiving\\s+day\\b",
+  // ceremonial alternatives: named holidays/observances
+  "\\bfederal\\s+holiday\\b",
+  "\\bday\\s+of\\s+remembrance\\b|\\bremembrance\\s+day\\b",
+  "\\b(?:memorial|columbus|veterans?|independence|flag|loyalty|patriot|father'?s|mother'?s)\\s+day\\b",
+  "\\bpearl\\s+harbor\\s+remembrance\\b",
+  "\\bgold\\s+star\\b",
+  "\\bcommemorat(?:e|ing|ion)\\b",
+  // "Celebrating"/"Celebration of" only when tied to an anniversary/heritage/day/week/month/year in the same clause
+  "\\b(?:celebrating|celebration\\s+of)\\b[^;.]{0,80}\\b(?:anniversary|heritage|day|week|month|year)\\b",
+];
+export const CEREMONIAL_PRESIDENTIAL_RE = new RegExp(CEREMONIAL_PRESIDENTIAL_PARTS.join("|"), "i");
 
 export function isCeremonialPresidential(doc: FrDoc): boolean {
   return doc.type === "Presidential Document" && CEREMONIAL_PRESIDENTIAL_RE.test(doc.title);
 }
 
+// OMB/PRA paperwork approvals are administrative, not substantive rulemaking.
+export const OMB_APPROVAL_RE = /\bomb\s+approval\b|\bapproval\s+of\s+(?:an\s+)?information\s+collection\b/i;
+const OMB_EFFECTIVE_DATE_RE = /announcement of (?:effective|compliance) date$/i;
+const OMB_MENTION_RE = /\bomb\b|office of management and budget|information collection|paperwork reduction/i;
+
+// isNoise only sees the title, so the abstract-based OMB/PRA check lives here (called from isRelevant).
+export function isOmbApprovalNotice(doc: FrDoc): boolean {
+  if (OMB_APPROVAL_RE.test(doc.title)) return true;
+  if (!OMB_EFFECTIVE_DATE_RE.test(doc.title)) return false;
+  return OMB_MENTION_RE.test(`${doc.title} ${doc.abstract ?? ""}`);
+}
+
+// Administrative presidential actions: advisory-committee continuations and federal pay adjustments.
+export const ADMIN_PRESIDENTIAL_RE =
+  /\bcontinuance of certain federal advisory committees\b|^(?!.*\b(?:impos|modif|amend|establish|suspen|terminat|expand|adjust|prohibit|block|revok)).*\bcontinuing the\b[^;.]{0,80}\b(?:council|committee|commission|board)s?\b|\badjustments?\s+(?:of|to)\b.{0,60}\brates?\s+of\s+pay\b/i;
+
+export function isAdministrativePresidential(doc: FrDoc): boolean {
+  return doc.type === "Presidential Document" && ADMIN_PRESIDENTIAL_RE.test(doc.title);
+}
+
+// SRO filings (titles starting "Self-Regulatory Organizations;") are not relevant by default: they are
+// kept only when they hit a high-weight topic (crypto, exchange products/listings, or swaps-margining
+// narrowed to Treasury clearing / cross-margining / clearing agency), name a new exchange/listing venue,
+// or their TITLE announces a new product listing or an options/derivative listing (SRO_NEW_PRODUCT_LISTING_RE).
+export const SRO_TITLE_RE = /^self-regulatory organizations\b/i;
+export const SRO_HIGH_WEIGHT_TOPICS = ["exchange-products-listings", "crypto", "swaps-margining"];
+// bare "swap" is excluded for SRO filings — only clearing/cross-margining counts
+const SRO_CLEARING_RE =
+  /treasury clearing|cross-margin|registration as a clearing agency|covered clearing agenc|clearing agenc(y|ies)\s+(rules?|registration|standards|risk management|regulation)/i;
+export const SRO_NEW_VENUE_RE = /registration as a national securities exchange|form 1\b(?!-)|new exchange/i;
+// new-product and options/derivative listing proposals (TITLE-only match):
+// (a) new product listing phrasings; (b) options on/binary options/index options co-occurring with list|listing|trade
+export const SRO_NEW_PRODUCT_LISTING_RE =
+  /to permit the (?:generic )?listing(?: and trading)? of\b|to list and trade\b|to adopt (?:generic )?listing standards\b|listing standards for\b|generic listing\b|(?:(?:binary |index )?options on|binary options|index options)(?=[^;]{0,120}\b(?:list|listing|trade)\b)/i;
+
+export function isExchangeRegistrationAck(doc: FrDoc): boolean {
+  return /^acknowledge?ment of receipt of notice of registration as a national securities exchange/i.test(doc.title);
+}
+
+export function isSroFiling(doc: FrDoc): boolean {
+  if (!SRO_TITLE_RE.test(doc.title)) return false;
+  const text = `${doc.title} ${doc.abstract ?? ""}`;
+  const matched = classifyTopics(text).map((t) => t.id);
+  if (SRO_HIGH_WEIGHT_TOPICS.some((id) => matched.includes(id) && (id !== "swaps-margining" || SRO_CLEARING_RE.test(text)))) {
+    return true;
+  }
+  return SRO_NEW_VENUE_RE.test(text) || SRO_NEW_PRODUCT_LISTING_RE.test(doc.title);
+}
+
 export function isRelevant(doc: FrDoc): boolean {
   if (isNoise(doc)) return false;
-  if (doc.type === "Presidential Document") return !isCeremonialPresidential(doc);
+  if (isExchangeRegistrationAck(doc)) return true;
+  if (SRO_TITLE_RE.test(doc.title)) return isSroFiling(doc);
+  if (doc.type === "Presidential Document") {
+    // Known false positive (not fixed): water-quality-type EOs are kept by default though labeled not relevant.
+    return !isCeremonialPresidential(doc) && !isAdministrativePresidential(doc);
+  }
   if (consentPartyTickers(doc.title).length > 0) return true;
   return classifyTopics(`${doc.title} ${doc.abstract ?? ""}`).length > 0;
 }
