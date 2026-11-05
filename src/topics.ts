@@ -369,13 +369,22 @@ export function isAdministrativePresidential(doc: FrDoc): boolean {
 
 // SRO filings (titles starting "Self-Regulatory Organizations;") are not relevant by default: they are
 // kept only when they hit a high-weight topic (crypto, exchange products/listings, or swaps-margining
-// narrowed to Treasury clearing / cross-margining / clearing agency) or name a new exchange/listing venue.
+// narrowed to Treasury clearing / cross-margining / clearing agency), name a new exchange/listing venue,
+// or their TITLE announces a new product listing or an options/derivative listing (SRO_NEW_PRODUCT_LISTING_RE).
 export const SRO_TITLE_RE = /^self-regulatory organizations\b/i;
 export const SRO_HIGH_WEIGHT_TOPICS = ["exchange-products-listings", "crypto", "swaps-margining"];
 // bare "swap" is excluded for SRO filings — only clearing/cross-margining counts
 const SRO_CLEARING_RE =
   /treasury clearing|cross-margin|registration as a clearing agency|covered clearing agenc|clearing agenc(y|ies)\s+(rules?|registration|standards|risk management|regulation)/i;
-const SRO_NEW_VENUE_RE = /registration as a national securities exchange|form 1 application|new exchange/i;
+export const SRO_NEW_VENUE_RE = /registration as a national securities exchange|form 1\b(?!-)|new exchange/i;
+// new-product and options/derivative listing proposals (TITLE-only match):
+// (a) new product listing phrasings; (b) options on/binary options/index options co-occurring with list|listing|trade
+export const SRO_NEW_PRODUCT_LISTING_RE =
+  /to permit the (?:generic )?listing(?: and trading)? of\b|to list and trade\b|to adopt (?:generic )?listing standards\b|listing standards for\b|generic listing\b|(?:(?:binary |index )?options on|binary options|index options)(?=[^;]{0,120}\b(?:list|listing|trade)\b)/i;
+
+export function isExchangeRegistrationAck(doc: FrDoc): boolean {
+  return /^acknowledge?ment of receipt of notice of registration as a national securities exchange/i.test(doc.title);
+}
 
 export function isSroFiling(doc: FrDoc): boolean {
   if (!SRO_TITLE_RE.test(doc.title)) return false;
@@ -384,12 +393,13 @@ export function isSroFiling(doc: FrDoc): boolean {
   if (SRO_HIGH_WEIGHT_TOPICS.some((id) => matched.includes(id) && (id !== "swaps-margining" || SRO_CLEARING_RE.test(text)))) {
     return true;
   }
-  return SRO_NEW_VENUE_RE.test(text);
+  return SRO_NEW_VENUE_RE.test(text) || SRO_NEW_PRODUCT_LISTING_RE.test(doc.title);
 }
 
 export function isRelevant(doc: FrDoc): boolean {
   if (isNoise(doc)) return false;
-  if (SRO_TITLE_RE.test(doc.title) && !isSroFiling(doc)) return false;
+  if (isExchangeRegistrationAck(doc)) return true;
+  if (SRO_TITLE_RE.test(doc.title)) return isSroFiling(doc);
   if (doc.type === "Presidential Document") {
     // Known false positive (not fixed): water-quality-type EOs are kept by default though labeled not relevant.
     return !isCeremonialPresidential(doc) && !isAdministrativePresidential(doc);
