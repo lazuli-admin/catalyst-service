@@ -336,7 +336,7 @@ describe("other noise patterns", () => {
 
 describe("noise pattern coverage", () => {
   it("covers every NOISE_PATTERNS entry (add a test when adding a pattern)", () => {
-    expect(NOISE_PATTERNS.length).toBe(20);
+    expect(NOISE_PATTERNS.length).toBe(22);
   });
 
   it("AD_CVD_RE is the first noise pattern (Section 232 override depends on identity)", () => {
