@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
-import { SEC_ADMIN_LOW_IMPACT_RE, isRelevant, type FrDoc } from "../src/topics.js";
+import { SEC_ADMIN_LOW_IMPACT_RE, isNoise, isRelevant, type FrDoc } from "../src/topics.js";
 
-const doc = (title: string, type = "Rule"): FrDoc => ({ title, type });
+const doc = (title: string, type = "Rule"): FrDoc => ({ title, type, agencyLabel: "SEC" });
 
 describe("SEC low-impact administrative rules are not relevant", () => {
   const noise = [
@@ -64,5 +64,16 @@ describe("SEC low-impact administrative rules are not relevant", () => {
       ),
     ).toBe(true);
     expect(isRelevant(doc("Cross-Margining of Treasury Futures and Cash Treasury Securities"))).toBe(true);
+  });
+});
+
+describe("SEC_ADMIN_LOW_IMPACT_RE is scoped to SEC", () => {
+  test("SEC electronic-delivery paperwork is noise", () => {
+    expect(isNoise({ title: "Electronic Delivery of Certain Filings", type: "Rule", agencyLabel: "SEC" })).toBe(true);
+  });
+
+  test("the same pattern does not fire for other agencies", () => {
+    expect(isNoise({ title: "Electronic Filing of Customs Entries", type: "Rule", agencyLabel: "CBP" })).toBe(false);
+    expect(isNoise({ title: "Electronic Delivery of Certain Filings", type: "Rule", agencyLabel: "FCC" })).toBe(false);
   });
 });

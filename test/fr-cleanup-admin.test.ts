@@ -42,6 +42,18 @@ describe("administrative presidential negatives", () => {
     }
   });
 
+  it("continuation titles with an operative verb are kept", () => {
+    const kept = [
+      "Continuing the Suspension of Duties and Modifying the Board of Trade Arrangements",
+      "Continuing the Imposition of Tariffs Recommended by the Trade Board",
+    ];
+    for (const title of kept) {
+      const doc = { title, type: "Presidential Document" };
+      expect(isAdministrativePresidential(doc)).toBe(false);
+      expect(isRelevant(doc)).toBe(true);
+    }
+  });
+
   it("keeps substantive presidential documents (control)", () => {
     const kept = [
       "Adjusting Imports of Copper Into the United States",

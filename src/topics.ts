@@ -283,11 +283,6 @@ export const NOISE_PATTERNS: RegExp[] = [
   /incidental take|marine mammals?/i,
   // annual presidential continuation notices ("Continuation of the National Emergency With Respect to ...")
   /^continuation of the national emergency\b(?![^]*\band\s+(?:expan|modif|amend|impos|addition|new))/i,
-  // low-impact SEC administration: EDGAR/XBRL infrastructure, electronic submission of materials,
-  // fee-rate notices, and technical amendments where the tweak is the whole change (kept when paired
-  // with substantive changes, e.g. "... and Technical Amendments"). Never matches substantive rules
-  // like Treasury Clearing, Regulation NMS, Order Competition, Minimum Pricing Increments, SB swaps.
-  SEC_ADMIN_LOW_IMPACT_RE,
   // technical corrections are noise only when the correction is the whole change (kept when paired with additions, e.g. "and Technical Corrections" or "Technical Correction and ...")
   /^(?!.*(\btechnical corrections?\s+(and|&)\s+\w|\b(and|&)\s+technical corrections?\b)).*\btechnical corrections?\b/i,
   // USMCA/NAFTA binational panel procedure: roster applications, calls for applications, and panel-review docket notices
@@ -299,6 +294,7 @@ export interface FrDoc {
   abstract?: string | null;
   type?: string | null;
   agency?: string;
+  agencyLabel?: string;
   documentNumber?: string;
 }
 
@@ -310,6 +306,9 @@ export function isNoise(doc: FrDoc): boolean {
   if (doc.documentNumber && /^C\d-/.test(doc.documentNumber)) return true; // correction documents
   const s232 = /section 232/i.test(doc.title);
   const text = doc.title;
+  // low-impact SEC administration (EDGAR/XBRL infrastructure, electronic submission, fee rates,
+  // standalone technical amendments) — scoped to SEC only
+  if (doc.agencyLabel === "SEC" && SEC_ADMIN_LOW_IMPACT_RE.test(text)) return true;
   for (const p of NOISE_PATTERNS) {
     if (p === AD_CVD_RE && s232) continue; // Section 232 titles override AD/CVD paperwork noise only
     if (p.test(text)) return true;
@@ -362,7 +361,7 @@ export function isOmbApprovalNotice(doc: FrDoc): boolean {
 
 // Administrative presidential actions: advisory-committee continuations and federal pay adjustments.
 export const ADMIN_PRESIDENTIAL_RE =
-  /\bcontinuance of certain federal advisory committees\b|\bcontinuing the\b[^;.]{0,80}\b(?:council|committee|commission|board)\b|\badjustments?\s+(?:of|to)\b.{0,60}\brates?\s+of\s+pay\b/i;
+  /\bcontinuance of certain federal advisory committees\b|^(?!.*\b(?:impos|modif|amend|establish|suspen|terminat|expand|adjust|prohibit|block|revok)).*\bcontinuing the\b[^;.]{0,80}\b(?:council|committee|commission|board)s?\b|\badjustments?\s+(?:of|to)\b.{0,60}\brates?\s+of\s+pay\b/i;
 
 export function isAdministrativePresidential(doc: FrDoc): boolean {
   return doc.type === "Presidential Document" && ADMIN_PRESIDENTIAL_RE.test(doc.title);
