@@ -1,6 +1,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
-import { computeFrRecall, rowIsFetched, type FrBlindRow } from "../src/recall.js";
+import {
+  computeFrRecall,
+  inDefaultView,
+  rowIsFetched,
+  type FrBlindRow,
+} from "../src/recall.js";
 import { isRelevant, topicTags, TOPICS } from "../src/topics.js";
 import { TOPIC_KEEP_EXAMPLES } from "./fixtures/topic-keep-examples.js";
 
@@ -22,6 +27,10 @@ interface FrRegressionRow {
   title: string;
   abstract: string | null;
   relevant: boolean | number;
+  // optional: newer fixture rows carry these; older ones omit them
+  subtype?: string | null;
+  docket_ids?: string[] | null;
+  action?: string | null;
 }
 
 const regression = JSON.parse(
@@ -130,6 +139,9 @@ describe("fr-blind per-doc", () => {
         abstract: row.abstract,
         type: row.type,
         documentNumber: row.document_number,
+        subtype: row.subtype ?? null,
+        docket_ids: row.docket_ids ?? null,
+        action: row.action ?? null,
       };
       const result = isRelevant(doc);
       if (reason) {
@@ -151,6 +163,9 @@ describe("fr-regression per-doc", () => {
       title: row.title,
       abstract: row.abstract,
       documentNumber: row.document_number,
+      subtype: row.subtype ?? null,
+      docket_ids: row.docket_ids ?? null,
+      action: row.action ?? null,
     };
     expect(isRelevant(doc)).toBe(Boolean(row.relevant));
   });
@@ -198,5 +213,116 @@ describe("every topic matches at least one fixture doc", () => {
       expect(isRelevant(frDoc), doc.title).toBe(true);
       expect(topicTags(frDoc).topics, doc.title).toContain(doc.topic);
     }
+  });
+});
+
+describe("inDefaultView live default-view docs", () => {
+  const defaultView = JSON.parse(
+    readFileSync(new URL("./fixtures/fr-default-view-3.json", import.meta.url), "utf8"),
+  ) as FrBlindRow[];
+
+  test.each(["2025-19846", "2026-00327", "2026-10398"])("%s is in default view", (docNumber) => {
+    const row = defaultView.find((r) => r.document_number === docNumber);
+    expect(row, `doc ${docNumber} missing from fixture`).toBeDefined();
+    expect(inDefaultView(row!)).toBe(true);
+  });
+});
+
+// Synthetic parity tests: the recall metric must classify rows exactly like the live sync —
+// per-agency docs through the full admission chain (noise -> procedural -> OMB -> topic), so
+// agency-scoped structural helpers (SEC SRO, ITA AD/CVD, FCC bureau-notice) activate.
+describe("synthetic recall parity with live pipeline", () => {
+  const synthRow = (over: Partial<FrBlindRow> & Pick<FrBlindRow, "title">): FrBlindRow => ({
+    document_number: "synthetic",
+    abstract: null,
+    type: "Notice",
+    agency: "Securities and Exchange Commission",
+    publication_date: "2026-01-01",
+    relevant: false,
+    borderline: false,
+    reason: "",
+    ...over,
+  });
+  // predicted == what the sync would admit: for a relevant:true row the absence of FN, for a
+  // relevant:false row the presence of FP
+  const predicted = (row: FrBlindRow): boolean => {
+    const m = computeFrRecall([row]).fetched;
+    return row.relevant ? m.fn === 0 : m.fp === 1;
+  };
+
+  test("action-field OMB/PRA effective-date noise drops, substantive rule with same title keeps", () => {
+    const base = synthRow({
+      agency: "Federal Communications Commission",
+      type: "Rule",
+      title: "Accelerating Wireline Broadband Deployment by Removing Barriers to Infrastructure Investment",
+    });
+    const omb = {
+      ...base,
+      document_number: "syn-omb",
+      action: "Final rule; announcement of effective date",
+      abstract: "The Office of Management and Budget has approved the information collection requirements under the Paperwork Reduction Act.",
+    };
+    const substantive = { ...base, document_number: "syn-omb-ctrl", action: "Final rule." };
+    expect(predicted(omb)).toBe(false);
+    expect(predicted(substantive)).toBe(true);
+  });
+
+  test("agency-scoped SEC helper keeps SRO new-listing-standards timing notice; non-SEC stays noise", () => {
+    const sec = synthRow({
+      document_number: "syn-sec-ls",
+      relevant: true,
+      title: "Self-Regulatory Organizations; NYSE; Notice of Designation of a Longer Period for Commission Action on a Proposed Rule Change To Establish New Listing Standards",
+      action: "Notice of designation of a longer period",
+    });
+    expect(predicted(sec)).toBe(true);
+    const ftc = {
+      ...sec,
+      document_number: "syn-ftc-ls",
+      relevant: false,
+      agency: "Federal Trade Commission",
+    };
+    expect(predicted(ftc)).toBe(false);
+  });
+
+  test("ITA reinstatement of AD/CVD review keeps once agencyLabel is passed", () => {
+    const ita = synthRow({
+      document_number: "syn-ita",
+      relevant: true,
+      agency: "International Trade Administration",
+      title: "Fresh Garlic From the People's Republic of China: Reinstatement of Antidumping and Countervailing Duty Administrative Reviews",
+    });
+    expect(predicted(ita)).toBe(true);
+  });
+
+  test("DA-only FCC bureau procedural notice drops; FCC-numbered control keeps as generic topic", () => {
+    const base = synthRow({
+      agency: "Federal Communications Commission",
+      title: "Extension of the Reply Comment Deadline for the Broadband Deployment Proceeding",
+    });
+    const daOnly = { ...base, document_number: "syn-fcc-da", docket_ids: ["DA 26-902"] };
+    const fccNumbered = { ...base, document_number: "syn-fcc-ctrl", docket_ids: ["FCC 26-902"] };
+    expect(predicted(daOnly)).toBe(false);
+    expect(predicted(fccNumbered)).toBe(true);
+  });
+
+  test("substantive FCC rule matches generic topics and is untouched by DA/procedural scoping", () => {
+    const fccRule = synthRow({
+      document_number: "syn-fcc-rule",
+      relevant: true,
+      agency: "Federal Communications Commission",
+      type: "Rule",
+      title: "Accelerating Wireline Broadband Deployment by Removing Barriers to Infrastructure Investment",
+      action: "Final rule.",
+      docket_ids: ["WC Docket No. 26-1", "DA 26-1"],
+    });
+    expect(predicted(fccRule)).toBe(true);
+  });
+
+  test("correction docs (C-prefixed document number) drop through shared conversion", () => {
+    const corr = synthRow({
+      document_number: "C1-2026-99999",
+      title: "Amendments to Regulation SBSR for Shareholder Proposals",
+    });
+    expect(predicted(corr)).toBe(false);
   });
 });

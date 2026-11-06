@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { isRelevant, topicTags, type FrDoc } from "../src/topics.js";
+import { isNoise, isRelevant, topicTags, type FrDoc } from "../src/topics.js";
 
 interface LabeledDoc {
   document_number: string;
@@ -85,5 +85,53 @@ describe("topics", () => {
     expect(isRelevant(toFrDoc(silencers!))).toBe(false);
 
     expect(isRelevant({ title: "Section 232 Steel Tariffs; Correction" })).toBe(false);
+  });
+
+  it("FCC equipment authorization and supply chain rules", () => {
+    // Positive spectrum rule - should be kept
+    const spectrumRule = {
+      title: "Protecting Against National Security Threats to the Communications Supply Chain Through the Equipment Authorization Program",
+      action: "Final rule.",
+      agencyLabel: "FCC",
+      type: "Rule"
+    };
+    expect(isRelevant(spectrumRule)).toBe(true);
+
+    // Negative unrelated rule - should not be kept
+    const unrelatedRule = {
+      title: "General Telecommunications Rules",
+      action: "Final rule.",
+      agencyLabel: "FCC",
+      type: "Rule"
+    };
+    expect(isRelevant(unrelatedRule)).toBe(false);
+
+    // Correction document test
+    const correctionDoc = {
+      title: "Correction to Previous FCC Rule",
+      documentNumber: "C1-2026-0001",
+      agencyLabel: "FCC",
+      type: "Rule"
+    };
+    expect(isRelevant(correctionDoc)).toBe(false);
+
+    // OMB real action placement test
+    const ombAction = {
+      title: "Test Rule Title",
+      action: "Final rule; announcement of effective date.",
+      abstract: "The information collection requirements have been submitted to the Office of Management and Budget.",
+      agencyLabel: "FCC",
+      type: "Rule"
+    };
+    expect(isNoise(ombAction)).toBe(true); // OMB guard genuinely exercised via the abstract mention
+    expect(isRelevant(ombAction)).toBe(false);
+
+    // SRO listing test
+    const sroListing = {
+      title: "Self-Regulatory Organizations; Notice of Application for Order Granting Permission to List and Trade Binary Options on Certain Underlying Assets",
+      agencyLabel: "SEC",
+      type: "Notice"
+    };
+    expect(isRelevant(sroListing)).toBe(true);
   });
 });

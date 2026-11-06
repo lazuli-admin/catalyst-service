@@ -1,7 +1,7 @@
 // Deterministic structured catalysts: Federal Register rules (public JSON API, no key) + static elections calendar. No LLM.
 import type { Store } from "../db.js";
 import { errorMessage } from "../util.js";
-import { isNoise, isRelevant, NOISE_PATTERNS, topicTags } from "../topics.js";
+import { isNoise, isOmbApprovalNotice, isRelevant, NOISE_PATTERNS, topicTags } from "../topics.js";
 import { classify, hasOperativeMarker, type FrApiDoc, proceduralReason } from "./fr-classify.js";
 import { curatedFrDocNumbers } from "./policy.js";
 
@@ -189,13 +189,15 @@ export async function syncFederalRegister(
             log(`federal register skip ${documentNumber}: cited by curated policy row`);
             continue;
           }
-          // Relevance is decided by TOPIC, never agency; corrections are already covered by isNoise.
-          const doc: FrApiDoc = {
+          // Scoped subtype gates (SEC SRO, ITA AD/CVD) decide keep/noise over combined title+action
+          // before the global noise list and topic gate; corrections are caught by documentNumber.
+          const doc: FrApiDoc & { documentNumber: string } = {
             title,
             abstract,
             type: row.type as string,
             subtype: typeof row.subtype === "string" ? row.subtype : null,
             document_number: documentNumber,
+            documentNumber,
             html_url: htmlUrl,
             agencyLabel: target.presidential ? "President" : target.name,
             dates: typeof row.dates === "string" ? row.dates : null,
@@ -204,6 +206,13 @@ export async function syncFederalRegister(
             docket_ids: Array.isArray(row.docket_ids) ? row.docket_ids.filter((d): d is string => typeof d === "string") : null,
             action: typeof row.action === "string" ? row.action : null,
           };
+          // OMB/PRA paperwork effective-date announcements (action or title announces only the
+          // effective date of a prior rule) are dropped with an explicit reason before isNoise:
+          // an isNoise-side OMB guard would otherwise relabel these as generic noise telemetry.
+          if (isOmbApprovalNotice(doc)) {
+            dropReasons.set(documentNumber, "noise:omb-approval");
+            continue;
+          }
           if (isNoise(doc)) {
             dropReasons.set(documentNumber, `noise:${NOISE_PATTERNS.find((p) => p.test(title))?.source ?? "correction"}`);
             continue;

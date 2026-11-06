@@ -74,4 +74,9 @@ describe("proceduralReason", () => {
     expect(proceduralReason({ ...base, type: "Notice", docket_ids: [...base.docket_ids, "FCC 26-51"] })).toBeNull();
     expect(proceduralReason({ ...base, type: "Proposed Rule" } as FrApiDoc)).toBeNull();
   });
+
+  it("Notice with no docket_ids -> null", () => {
+    const doc: FrApiDoc = { title: "Some Title", type: "Notice", docket_ids: null, document_number: "test-5", agencyLabel: "FCC" };
+    expect(proceduralReason(doc)).toBeNull();
+  });
 });

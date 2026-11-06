@@ -6,10 +6,11 @@
 // fr-blind-2 (test/fixtures/fr-blind-2.json, seed-7 draw) is ALSO a REGRESSION set, not a
 // blind holdout, since it may have informed topic tuning.
 import { FR_AGENCIES, horizonEnd } from "./catalysts/federal-register.js";
+import { enforceTrust } from "./catalysts/credibility.js";
 import { classify, proceduralReason, type FrApiDoc } from "./catalysts/fr-classify.js";
 import { rankCatalysts } from "./catalysts/ranked.js";
 import type { Catalyst } from "./types.js";
-import { isNoise, isRelevant, topicTags } from "./topics.js";
+import { isNoise, isOmbApprovalNotice, isRelevant, topicTags } from "./topics.js";
 
 export interface FrBlindRow {
   document_number: string;
@@ -24,6 +25,10 @@ export interface FrBlindRow {
   effective_on?: string | null;
   comments_close_on?: string | null;
   dates?: string | null;
+  subtype?: string | null;
+  docket_ids?: string[] | null;
+  action?: string | null;
+  body_text?: string | null;
 }
 
 /** FR_AGENCIES labels, keyed by slug. */
@@ -71,44 +76,111 @@ export interface FrRecall {
   borderline: { fetched: boolean; predicted: boolean; labeledRelevant: boolean; title: string }[];
 }
 
-/** Whether a doc the sync admits would survive the default view (rank gate) as of its publication date. */
-export function inDefaultView(row: FrBlindRow): boolean {
-  const firstAgency = row.agency.split(";")[0]?.trim() ?? "";
-  const doc: FrApiDoc = {
+/** All FR_AGENCIES labels the sync would attach to this row's doc (empty if the doc is a
+ * Presidential Document, which uses a fixed "President" label, or is not admitted by type). */
+function docLabels(row: FrBlindRow): string[] {
+  if (row.type === "Presidential Document") return ["President"];
+  if (row.type !== "Rule" && row.type !== "Proposed Rule" && row.type !== "Notice") return [];
+  const labels = row.agency.split(";")
+    .map((name) => DISPLAY_TO_LABEL[name.trim()])
+    .filter((label): label is string => !!label && FR_LABELS.has(label));
+  const order = Object.values(FR_AGENCIES).map((a) => a.label);
+  return [...new Set(labels)].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+}
+
+/** FrApiDoc shape plus FrDoc's `documentNumber`: the same doc feeds both the structural topic
+ * helpers (which read documentNumber) and classify (which reads document_number); setting both
+ * lets isNoise drop correction docs (C-prefixed numbers) in recall metrics too. */
+type RowDoc = FrApiDoc & { documentNumber: string };
+
+/** Row -> per-agency doc with the same metadata the live sync builds (federal-register.ts). */
+function toDoc(row: FrBlindRow, agencyLabel: string): RowDoc {
+  return {
     title: row.title,
-    abstract: row.abstract,
+    abstract: row.abstract ?? "",
     type: row.type,
+    subtype: row.subtype ?? null,
     document_number: row.document_number,
-    agencyLabel: row.type === "Presidential Document" ? "President" : DISPLAY_TO_LABEL[firstAgency] ?? firstAgency,
+    documentNumber: row.document_number,
+    agencyLabel,
     dates: row.dates ?? null,
     effective_on: row.effective_on ?? null,
     comments_close_on: row.comments_close_on ?? null,
+    docket_ids: row.docket_ids ?? null,
+    action: row.action ?? null,
     html_url: null,
+    bodyText: row.body_text ?? null,
   };
-  if (isNoise(doc) || !isRelevant(doc) || proceduralReason(doc)) return false;
-  const events = classify(doc, { today: row.publication_date, end: horizonEnd(row.publication_date, 180) });
-  const tags = topicTags(doc);
-  const cats: Catalyst[] = events.map((ev) => ({
-    id: "dv",
-    ticker: null,
-    title: ev.title,
-    kind: ev.kind,
-    status: "scheduled",
-    dateStart: ev.date,
-    dateEnd: ev.date,
-    datePrecision: ev.datePrecision,
-    dateSource: ev.dateSource,
-    confidence: 0.9,
-    themes: tags.themes,
-    affectedTickers: tags.affectedTickers,
-    sourceTier: 1,
-    sourceUrl: ev.sourceUrl,
-    observationId: null,
-    dedupeKey: ev.dedupeKey,
-    createdAt: "",
-    updatedAt: "",
-  }));
-  return rankCatalysts(cats, { asOf: row.publication_date }).length > 0;
+}
+
+/** Sync admission-chain parity: noise -> procedural -> OMB approval -> topic. */
+function admitted(doc: RowDoc): boolean {
+  return !isNoise(doc) && !proceduralReason(doc) && !isOmbApprovalNotice(doc) && isRelevant(doc);
+}
+
+function buildDocs(row: FrBlindRow): FrApiDoc[] {
+  return docLabels(row).map((label) => toDoc(row, label)).filter(admitted);
+}
+
+/** Predicted relevance at live parity: each inferred agency label runs the full sync chain, so
+ * agency-scoped structural helpers (SEC SRO, ITA AD/CVD, FCC procedural) activate. Rows with no
+ * inferred label (not fetched / non-synced agencies) keep the label-less topic-only prediction
+ * so notFetched reporting stays meaningful. */
+function predictedRelevant(row: FrBlindRow): boolean {
+  const labels = docLabels(row);
+  if (labels.length === 0) return isRelevant(toDoc(row, ""));
+  return labels.some((label) => admitted(toDoc(row, label)));
+}
+
+/** Whether the rank-gated default view would show this row's docs on SOME day: try several
+ * as-of days around each classified event date (the event day, the next day, and 90/180
+ * days earlier) and accept if any candidate day surfaces a surviving catalyst. */
+export function inDefaultView(row: FrBlindRow): boolean {
+  const docs = buildDocs(row);
+  if (docs.length === 0) return false;
+  const dates = new Set<string>();
+  for (const doc of docs) {
+    for (const ev of classify(doc, { today: "0000-01-01", end: "9999-12-31" })) dates.add(ev.date);
+  }
+  const candidates = [...dates]
+    .flatMap((d) => [d, horizonEnd(d, 1), horizonEnd(d, -90), horizonEnd(d, -180)])
+    .sort();
+  return candidates.some((t) => atDay(docs, t));
+}
+
+function atDay(docs: FrApiDoc[], t: string): boolean {
+  const byKey = new Map<string, Catalyst>();
+  for (const doc of docs) {
+    const tags = topicTags(doc);
+    for (const ev of classify(doc, { today: t, end: horizonEnd(t, 180) })) {
+      const draft: Catalyst = {
+        id: "dv",
+        ticker: null,
+        title: ev.title,
+        kind: ev.kind,
+        status: "scheduled",
+        dateStart: ev.date,
+        dateEnd: ev.date,
+        datePrecision: ev.datePrecision,
+        dateSource: ev.dateSource,
+        confidence: 0.9,
+        themes: tags.themes,
+        affectedTickers: tags.affectedTickers,
+        sourceTier: 1,
+        sourceUrl: ev.sourceUrl,
+        observationId: null,
+        dedupeKey: ev.dedupeKey,
+        createdAt: "",
+        updatedAt: "",
+      };
+      const cat = enforceTrust(draft);
+      if (cat) byKey.set(ev.dedupeKey, cat);
+    }
+  }
+  const rows = [...byKey.values()].filter(
+    (c) => c.status !== "lead" && c.status !== "cancelled" && c.dateStart <= horizonEnd(t, 90) && c.dateEnd >= t,
+  );
+  return rankCatalysts(rows, { asOf: t }).length > 0;
 }
 
 function metrics(rows: FrBlindRow[]): RecallCounts {
@@ -117,12 +189,7 @@ function metrics(rows: FrBlindRow[]): RecallCounts {
   const fpRows: FrBlindRow[] = [];
   const dvFpRows: FrBlindRow[] = [];
   for (const row of rows) {
-    const predicted = isRelevant({
-      title: row.title,
-      abstract: row.abstract,
-      type: row.type,
-      documentNumber: row.document_number,
-    });
+    const predicted = predictedRelevant(row);
     if (predicted && inDefaultView(row)) {
       if (row.relevant) dvTp += 1;
       else { dvFp += 1; dvFpRows.push(row); }
@@ -156,7 +223,7 @@ export function computeFrRecall(rows: FrBlindRow[]): FrRecall {
       .filter((r) => r.borderline)
       .map((r) => ({
         fetched: rowIsFetched(r),
-        predicted: isRelevant({ title: r.title, abstract: r.abstract, type: r.type, documentNumber: r.document_number }),
+        predicted: predictedRelevant(r),
         labeledRelevant: r.relevant,
         title: r.title,
       })),
