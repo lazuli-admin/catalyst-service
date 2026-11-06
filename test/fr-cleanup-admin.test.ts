@@ -26,6 +26,42 @@ describe("administrative OMB/PRA approval notices", () => {
   it("drops titles announcing OMB approval directly", () => {
     expect(isOmbApprovalNotice({ title: "OMB Approval; Information Collection for Survey of Participants" })).toBe(true);
   });
+
+  it("drops action-field effective-date announcements (real field placement) mentioning OMB/PRA", () => {
+    // Real shape: the API `action` line carries the announcement; the title never says "effective date".
+    const doc = {
+      type: "Rule",
+      title: "Accelerating Wireline Broadband Deployment by Removing Barriers to Infrastructure Investment",
+      action: "Final rule; announcement of effective date",
+      abstract:
+        "In this document, the Commission announces that the Office of Management and Budget has approved the information collection requirements under the Paperwork Reduction Act.",
+    };
+    expect(isOmbApprovalNotice(doc)).toBe(true);
+    expect(isRelevant(doc)).toBe(false);
+  });
+
+  it("keeps a substantive final rule (action \"Final rule.\") even when its abstract mentions OMB/PRA", () => {
+    const doc = {
+      type: "Rule",
+      title: "Accelerating Wireline Broadband Deployment by Removing Barriers to Infrastructure Investment",
+      action: "Final rule.",
+      abstract:
+        "The Office of Management and Budget approved the information collection requirements under the Paperwork Reduction Act.",
+    };
+    expect(isOmbApprovalNotice(doc)).toBe(false);
+    expect(isRelevant(doc)).toBe(true);
+  });
+
+  it("keeps action-field effective-date announcements without OMB/PRA wording (control)", () => {
+    const doc = {
+      type: "Rule",
+      title: "Cross-Margining of Treasury Futures",
+      action: "Final rule; announcement of effective date",
+      abstract: "This document announces the effective date of the final rule on cross-margining arrangements.",
+    };
+    expect(isOmbApprovalNotice(doc)).toBe(false);
+    expect(isRelevant(doc)).toBe(true);
+  });
 });
 
 describe("administrative presidential negatives", () => {

@@ -296,15 +296,111 @@ export interface FrDoc {
   agency?: string;
   agencyLabel?: string;
   documentNumber?: string;
+  // FR metadata: the API's "action" line (e.g. "Final rule; announcement of effective date"),
+  // document subtype, and agency docket IDs. Optional so plain { title } call sites keep working.
+  action?: string | null;
+  subtype?: string | null;
+  docket_ids?: string[] | null;
 }
 
 export function classifyTopics(text: string): Topic[] {
   return TOPICS.filter((t) => t.patterns.some((p) => p.test(text)));
 }
 
+// SEC SRO-filing subtype (agency SEC, type Notice/Rule/Proposed Rule or absent, SRO title prefix):
+// a single scoped gate over combined title+action. "noise" drops fee/CAT/surveillance/technical
+// filings first, "keep" rescues substantive listing/product/registration filings (including from
+// the global noise list's timing regex); null = out of scope, old behavior applies untouched.
+// Keep requires a substantive listing/product action: adopt/establish/amend/modify listing
+// standards, named options/derivatives/ETPs co-occurring with a listing, list-and-trade securities,
+// or exchange registration. Bare "listing standards" references and bare "to permit ... trading"
+// (trading-hours/plumbing filings) do NOT keep; "change" is excluded because "Proposed Rule Change
+// To Remove ..." boilerplate would otherwise keep removals. Noise (fees/CAT/technical) still first.
+export const SEC_SRO_KEEP_RE =
+  /\b(?:adopt|adopting|establish|establishing|amend(?:ing|ed)?|modif\w+)\b[^;]{0,30}\blisting standards?\b|\b(?:binary |index )?(?:options?|derivatives?|ETPs?)[^;]{0,120}\b(?:list|listing)\b|\b(?:list|listing)\b[^;]{0,60}\b(?:binary |index )?(?:options?|derivatives?|ETPs?)\b|\blist and trade\b|registration as a national securities exchange|form 1\b(?!-)|new exchange/i;
+export const SEC_SRO_NOISE_RE =
+  /\bfees?\b|fee schedule|\bCAT\b|consolidated audit trail|clearly erroneous|LULD|circuit[- ]breaker|technical (?:amendments?|changes?|corrections?)|conforming (?:amendments?|changes?)/i;
+export const SEC_SRO_TIMING_RE = /designation of (a )?longer period|extension of (the )?time\b/i;
+
+export function secSroSubtype(doc: FrDoc): "keep" | "noise" | null {
+  if (doc.agencyLabel !== "SEC") return null;
+  if (doc.type && !/^(Notice|Rule|Proposed Rule)$/i.test(doc.type)) return null;
+  if (!SRO_TITLE_RE.test(doc.title)) return null;
+  const text = `${doc.title} ${doc.action ?? ""}`;
+  if (SEC_SRO_NOISE_RE.test(text)) return "noise"; // fees/CAT/LULD/etc. drop even when products are mentioned
+  if (SEC_SRO_TIMING_RE.test(text)) return SEC_SRO_KEEP_RE.test(text) ? "keep" : "noise";
+  if (SEC_SRO_KEEP_RE.test(text)) return "keep";
+  return null;
+}
+
+// FCC substantive rulemaking subtype (agency FCC, type Rule/Proposed Rule): a keep-only gate over
+// combined title+action for equipment-authorization and communications supply-chain rulemakings
+// (e.g. the Equipment Authorization Program supply-chain final rule). It never decides noise:
+// Sunshine titles and the global noise list still drop, FCC DA-only bureau Notices stay with
+// proceduralReason, and the OMB guard precedes this keep (see isNoise/isRelevant).
+// null = out of scope, old behavior applies untouched — not a blanket keep of FCC final rules.
+export const FCC_EQUIP_AUTH_RE =
+  /equipment authorization|communications supply[- ]chain/i;
+
+export function fccSubstantiveSubtype(doc: FrDoc): "keep" | null {
+  // Corrections and OMB approvals always win, before any FCC keep decisions
+  if (doc.documentNumber && /^C\d-/.test(doc.documentNumber)) return null; // correction documents
+  if (isOmbApprovalNotice(doc)) return null; // OMB approvals incl. action-based effective-date announcements
+  if (doc.agencyLabel !== "FCC") return null;
+  if (!doc.type || !/^(Rule|Proposed Rule)$/i.test(doc.type)) return null; // actual rulemaking type required (absent = out of scope)
+  if (!FCC_EQUIP_AUTH_RE.test(`${doc.title} ${doc.action ?? ""}`)) return null;
+  return "keep";
+}
+
+// ITA AD/CVD subtype (agency ITA, type Notice/Rule/Proposed Rule or absent, AD/CVD trade-remedy
+// subject): one scoped gate over combined title+action. Priority: reinstatement or actual order
+// amendment keeps (even "Amended Final Results ... Reinstatement"); then administrative/sunset
+// review administration and SOLE postponement/petition-adequacy notices are noise (a postponement
+// that also announces an actual determination keeps); new orders and preliminary/final affirmative
+// or negative determinations keep. null = out of scope, existing behavior applies untouched.
+export const ITA_ADCVD_SUBJECT_RE = /\bantidumping\b|\bcountervailing\b|less[- ]than[- ]fair[- ]value/i;
+export const ITA_ADCVD_REINSTATE_OR_AMEND_RE =
+  /\breinstat(?:e|ing|ement)\b|\b(?:amend(?:ed|ments?)|modif\w+)\b[^;]{0,80}\b(?:antidumping|countervailing) duty orders?\b/i;
+export const ITA_ADCVD_POSTPONE_RE =
+  /postponement of (?:the )?(?:preliminary|final) determination|extension of (?:the )?deadline for determining (?:the )?adequacy/i;
+// stateful-free global copy: erases ALL postponement occurrences before the determination test
+export const ITA_ADCVD_POSTPONE_ALL_RE = new RegExp(ITA_ADCVD_POSTPONE_RE.source, "gi");
+export const ITA_ADCVD_DETERM_RE =
+  /\b(?:preliminary|final|affirmative|negative)\s+(?:affirmative\s+|negative\s+|preliminary\s+|final\s+|antidumping\s+|countervailing\s+|duty\s+)*determination\b/i;
+export const ITA_ADCVD_ORDER_RE = /\b(?:antidumping|countervailing) duty orders?\b/i;
+
+export function itaAdCvdSubtype(doc: FrDoc): "keep" | "noise" | null {
+  if (doc.agencyLabel !== "ITA") return null;
+  if (doc.type && !/^(Notice|Rule|Proposed Rule)$/i.test(doc.type)) return null;
+  const text = `${doc.title} ${doc.action ?? ""}`;
+  if (!ITA_ADCVD_SUBJECT_RE.test(text)) return null; // generic trade context required, not a blanket ITA rule
+  if (ITA_ADCVD_REINSTATE_OR_AMEND_RE.test(text)) return "keep";
+  // postponement phrases are erased (ALL occurrences, title and action can repeat) before the
+  // determination test so a determination word inside "Postponement of ... Determination" never
+  // counts as an actual determination announcement
+  if (ITA_ADCVD_POSTPONE_RE.test(text) && !ITA_ADCVD_DETERM_RE.test(text.replace(ITA_ADCVD_POSTPONE_ALL_RE, " "))) {
+    return "noise";
+  }
+  if (AD_CVD_RE.test(text)) return "noise"; // administrative/sunset reviews and routine case administration
+  if (ITA_ADCVD_DETERM_RE.test(text) || ITA_ADCVD_ORDER_RE.test(text)) return "keep";
+  return null;
+}
+
 export function isNoise(doc: FrDoc): boolean {
+  // corrections and OMB/PRA approvals (title- or action-based) drop before any subtype decision,
+  // so no subtype keep below can rescue them
   if (doc.documentNumber && /^C\d-/.test(doc.documentNumber)) return true; // correction documents
+  if (isOmbApprovalNotice(doc)) return true; // OMB approvals incl. action-based effective-date announcements
+  const secSub = secSroSubtype(doc);
+  if (secSub) return secSub === "noise"; // explicit subtype decision preempts the global noise list
   const s232 = /section 232/i.test(doc.title);
+  const itaSub = itaAdCvdSubtype(doc);
+  if (itaSub === "keep") return false; // subtype keep preempts the global noise list
+  // with a Section 232 title the AD/CVD-skip exception wins, so subtype noise falls through to
+  // the noise list below where AD_CVD_RE is skipped for s232 titles
+  if (itaSub === "noise" && !s232) return true;
+  // FCC keeps are decided only in isRelevant (after isNoise), so Sunshine and other procedural
+  // noise from the list below can never be bypassed by a substantive FCC subtype keep
   const text = doc.title;
   // low-impact SEC administration (EDGAR/XBRL infrastructure, electronic submission, fee rates,
   // standalone technical amendments) — scoped to SEC only
@@ -350,12 +446,20 @@ export function isCeremonialPresidential(doc: FrDoc): boolean {
 // OMB/PRA paperwork approvals are administrative, not substantive rulemaking.
 export const OMB_APPROVAL_RE = /\bomb\s+approval\b|\bapproval\s+of\s+(?:an\s+)?information\s+collection\b/i;
 const OMB_EFFECTIVE_DATE_RE = /announcement of (?:effective|compliance) date$/i;
+/** FR `action` field announcing only an effective/compliance date of a previously issued final rule. */
+const OMB_EFFECTIVE_DATE_ACTION_RE = /^final rule;\s*announcement of (?:effective|compliance) date\.?$/i;
 const OMB_MENTION_RE = /\bomb\b|office of management and budget|information collection|paperwork reduction/i;
 
-// isNoise only sees the title, so the abstract-based OMB/PRA check lives here (called from isRelevant).
+// Shared by isNoise and isRelevant: isNoise consumes it so action-based OMB approvals report a
+// consistent noise decision (and drop reason) everywhere, not just an isRelevant false.
 export function isOmbApprovalNotice(doc: FrDoc): boolean {
   if (OMB_APPROVAL_RE.test(doc.title)) return true;
-  if (!OMB_EFFECTIVE_DATE_RE.test(doc.title)) return false;
+  // The action field, not the title, carries the effective/compliance-date announcement for many
+  // final rules (e.g. title "Accelerating Wireline Broadband Deployment...", action
+  // "Final rule; announcement of effective date"). Both are announcements of a PRIOR rule, never
+  // substantive rulemaking of their own — so a "Final rule." action alone never triggers this.
+  const announcedOnly = OMB_EFFECTIVE_DATE_RE.test(doc.title) || OMB_EFFECTIVE_DATE_ACTION_RE.test(doc.action ?? "");
+  if (!announcedOnly) return false;
   return OMB_MENTION_RE.test(`${doc.title} ${doc.abstract ?? ""}`);
 }
 
@@ -397,7 +501,12 @@ export function isSroFiling(doc: FrDoc): boolean {
 }
 
 export function isRelevant(doc: FrDoc): boolean {
+  // isNoise covers correction documents, OMB/PRA approvals (title- and action-based), and subtype
+  // noise, so all of them drop before any subtype keep below.
   if (isNoise(doc)) return false;
+  if (secSroSubtype(doc) === "keep") return true; // explicit keep bypasses the noise list and the SRO topic gate
+  if (itaAdCvdSubtype(doc) === "keep") return true; // ITA keep, after corrections and the OMB guard
+  if (fccSubstantiveSubtype(doc) === "keep") return true; // FCC substantive rulemaking keep, after the OMB guard
   if (isExchangeRegistrationAck(doc)) return true;
   if (SRO_TITLE_RE.test(doc.title)) return isSroFiling(doc);
   if (doc.type === "Presidential Document") {

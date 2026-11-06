@@ -10,7 +10,7 @@ import { enforceTrust } from "./catalysts/credibility.js";
 import { classify, proceduralReason, type FrApiDoc } from "./catalysts/fr-classify.js";
 import { rankCatalysts } from "./catalysts/ranked.js";
 import type { Catalyst } from "./types.js";
-import { isNoise, isRelevant, topicTags } from "./topics.js";
+import { isNoise, isOmbApprovalNotice, isRelevant, topicTags } from "./topics.js";
 
 export interface FrBlindRow {
   document_number: string;
@@ -88,27 +88,48 @@ function docLabels(row: FrBlindRow): string[] {
   return [...new Set(labels)].sort((a, b) => order.indexOf(a) - order.indexOf(b));
 }
 
+/** FrApiDoc shape plus FrDoc's `documentNumber`: the same doc feeds both the structural topic
+ * helpers (which read documentNumber) and classify (which reads document_number); setting both
+ * lets isNoise drop correction docs (C-prefixed numbers) in recall metrics too. */
+type RowDoc = FrApiDoc & { documentNumber: string };
+
+/** Row -> per-agency doc with the same metadata the live sync builds (federal-register.ts). */
+function toDoc(row: FrBlindRow, agencyLabel: string): RowDoc {
+  return {
+    title: row.title,
+    abstract: row.abstract ?? "",
+    type: row.type,
+    subtype: row.subtype ?? null,
+    document_number: row.document_number,
+    documentNumber: row.document_number,
+    agencyLabel,
+    dates: row.dates ?? null,
+    effective_on: row.effective_on ?? null,
+    comments_close_on: row.comments_close_on ?? null,
+    docket_ids: row.docket_ids ?? null,
+    action: row.action ?? null,
+    html_url: null,
+    bodyText: row.body_text ?? null,
+  };
+}
+
+/** Sync admission-chain parity: noise -> procedural -> OMB approval -> topic. */
+function admitted(doc: RowDoc): boolean {
+  return !isNoise(doc) && !proceduralReason(doc) && !isOmbApprovalNotice(doc) && isRelevant(doc);
+}
+
 function buildDocs(row: FrBlindRow): FrApiDoc[] {
-  const docs: FrApiDoc[] = [];
-  for (const label of docLabels(row)) {
-    const doc: FrApiDoc = {
-      title: row.title,
-      abstract: row.abstract ?? "",
-      type: row.type,
-      subtype: row.subtype ?? null,
-      document_number: row.document_number,
-      agencyLabel: label,
-      dates: row.dates ?? null,
-      effective_on: row.effective_on ?? null,
-      comments_close_on: row.comments_close_on ?? null,
-      docket_ids: row.docket_ids ?? null,
-      action: row.action ?? null,
-      html_url: null,
-      bodyText: row.body_text ?? null,
-    };
-    if (!isNoise(doc) && !proceduralReason(doc) && isRelevant(doc)) docs.push(doc);
-  }
-  return docs;
+  return docLabels(row).map((label) => toDoc(row, label)).filter(admitted);
+}
+
+/** Predicted relevance at live parity: each inferred agency label runs the full sync chain, so
+ * agency-scoped structural helpers (SEC SRO, ITA AD/CVD, FCC procedural) activate. Rows with no
+ * inferred label (not fetched / non-synced agencies) keep the label-less topic-only prediction
+ * so notFetched reporting stays meaningful. */
+function predictedRelevant(row: FrBlindRow): boolean {
+  const labels = docLabels(row);
+  if (labels.length === 0) return isRelevant(toDoc(row, ""));
+  return labels.some((label) => admitted(toDoc(row, label)));
 }
 
 /** Whether the rank-gated default view would show this row's docs on SOME day: try several
@@ -168,12 +189,7 @@ function metrics(rows: FrBlindRow[]): RecallCounts {
   const fpRows: FrBlindRow[] = [];
   const dvFpRows: FrBlindRow[] = [];
   for (const row of rows) {
-    const predicted = isRelevant({
-      title: row.title,
-      abstract: row.abstract,
-      type: row.type,
-      documentNumber: row.document_number,
-    });
+    const predicted = predictedRelevant(row);
     if (predicted && inDefaultView(row)) {
       if (row.relevant) dvTp += 1;
       else { dvFp += 1; dvFpRows.push(row); }
@@ -207,7 +223,7 @@ export function computeFrRecall(rows: FrBlindRow[]): FrRecall {
       .filter((r) => r.borderline)
       .map((r) => ({
         fetched: rowIsFetched(r),
-        predicted: isRelevant({ title: r.title, abstract: r.abstract, type: r.type, documentNumber: r.document_number }),
+        predicted: predictedRelevant(r),
         labeledRelevant: r.relevant,
         title: r.title,
       })),

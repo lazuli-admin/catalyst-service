@@ -272,6 +272,67 @@ describe("federal register noise filters", () => {
     expect(catalysts(s).map((r) => r.title)).toEqual(["Merger Rule for Pharmaceutical Companies"]);
   });
 
+  it("correction documents (C1-) drop even with a substantive title", async () => {
+    const fetchImpl = mockFetch({
+      [FTC]: {
+        results: [
+          { title: "Merger Rule for Pharmaceutical Companies", effective_on: "2026-11-05", html_url: "u", abstract: "", document_number: "C1-2026-99999" },
+        ],
+      },
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
+    expect(catalysts(s)).toEqual([]);
+  });
+
+  it("FCC effective-date announcement with OMB-approved abstract -> zero events, drop reason noise:omb-approval", async () => {
+    const fetchImpl = mockFetch({
+      ["federal-communications-commission"]: {
+        results: [
+          {
+            title: "Accelerating Wireline Broadband Deployment on Tribal Lands",
+            type: "Rule",
+            action: "Final rule; announcement of effective date.",
+            effective_on: "2026-11-05",
+            html_url: "u",
+            abstract: "This document announces the effective date. The information collection requirements were approved by the Office of Management and Budget.",
+            document_number: "2026-44444",
+          },
+        ],
+      },
+    });
+    const s = store();
+    s.listStaleCatalysts.mockImplementation(async (kind: unknown) =>
+      kind === "rule_effective" ? [{ dedupeKey: "fr:2026-44444:2026-11-05", title: "Old rule" }] : [],
+    );
+    await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
+    expect(catalysts(s)).toEqual([]);
+    expect(getLastFrSyncReport()!.drops).toEqual([
+      { dedupeKey: "fr:2026-44444:2026-11-05", title: "Old rule", reason: "noise:omb-approval" },
+    ]);
+  });
+
+  it("FCC final rule with a 'Final rule.' action and no OMB mention stays admitted", async () => {
+    const fetchImpl = mockFetch({
+      ["federal-communications-commission"]: {
+        results: [
+          {
+            title: "Spectrum Sharing in the 6 GHz Band",
+            type: "Rule",
+            action: "Final rule.",
+            effective_on: "2026-11-05",
+            html_url: "u",
+            abstract: "",
+            document_number: "2026-44445",
+          },
+        ],
+      },
+    });
+    const s = store();
+    await syncFederalRegister(s, { ...opts, fetch: fetchImpl as unknown as typeof fetch });
+    expect(catalysts(s).map((r) => [r.title, r.dateStart])).toEqual([["Spectrum Sharing in the 6 GHz Band", "2026-11-05"]]);
+  });
+
   it("USTR 'Request for Comments ...' with a 'through' abstract gets no back-in-force event", async () => {
     const USTR = "trade-representative-office-of-united-states";
     const fetchImpl = mockFetch({
